@@ -1,0 +1,97 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Figma Ping Pong Plugin</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #ffffff;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      height: 100%;
+      justify-content: center;
+    }
+    
+    button {
+      background: #18a0fb;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+      min-width: 80px;
+    }
+    
+    button:hover {
+      background: #0c8ce9;
+    }
+    
+    button.secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    button.secondary:hover {
+      background: #e0e0e0;
+    }
+    
+    .status {
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h3>Figma Ping Pong Plugin</h3>
+    <button id="ping-btn">Ping</button>
+    <div id="status" class="status">Clique em Ping para testar</div>
+    <button id="close-btn" class="secondary">Fechar</button>
+  </div>
+
+  <script>
+    // Listen for messages from the plugin code
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      console.log('Received message in UI:', msg);
+      
+      if (msg && msg.type === 'pong') {
+        document.getElementById('status').textContent = 'Pong recebido! ✅';
+        alert('Pong recebido!');
+        
+        // Reset status after 2 seconds
+        setTimeout(() => {
+          document.getElementById('status').textContent = 'Clique em Ping para testar';
+        }, 2000);
+      }
+    };
+
+    // Send ping message
+    document.getElementById('ping-btn').onclick = () => {
+      console.log('Sending ping message');
+      document.getElementById('status').textContent = 'Enviando ping...';
+      parent.postMessage({ pluginMessage: { type: 'ping' } }, '*');
+    };
+
+    // Close plugin
+    document.getElementById('close-btn').onclick = () => {
+      parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
+    };
+  </script>
+</body>
+</html>
