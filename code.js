@@ -69,7 +69,12 @@ async function loadCollections() {
 async function exportSelectedTokens(selectedCollectionIds) {
   try {
     const localVariables = await figma.variables.getLocalVariablesAsync();
-    const tokens = {};
+    const structuredTokens = {
+      primitives: {},
+      globals: {},
+      semantics: {},
+      component: {}
+    };
     
     for (const variable of localVariables) {
       const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
@@ -79,40 +84,48 @@ async function exportSelectedTokens(selectedCollectionIds) {
         continue;
       }
       
-      if (!tokens[collection.name]) {
-        tokens[collection.name] = {};
-      }
+      // Process each mode to get token values
+      const tokenValues = {};
+      const hasMultipleModes = collection.modes.length > 1;
       
-      // Get values for each mode
-      const tokenData = {
-        name: variable.name,
-        type: variable.resolvedType,
-        scopes: variable.scopes,
-        values: {}
-      };
-      
-      // Process each mode
       for (const modeId of collection.modes.map(mode => mode.modeId)) {
         const mode = collection.modes.find(m => m.modeId === modeId);
         const value = variable.valuesByMode[modeId];
         
         if (value !== undefined) {
           if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            // Handle variable aliases
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenData.values[mode.name] = `{${aliasedVariable.name}}`;
+            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenData.values[mode.name] = value;
+            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
           }
         }
       }
       
-      tokens[collection.name][variable.name] = tokenData;
+      // Determine category based on collection name and variable type
+      const category = categorizeToken(collection.name, variable.name, variable.resolvedType);
+      const tokenPath = parseTokenPath(variable.name);
+      
+      // Create token structure
+      const tokenData = {
+        value: tokenValues[collection.modes[0].name] || null,
+        type: "other"
+      };
+      
+      // Add mode extensions if multiple modes exist
+      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
+        tokenData["$extensions"] = {
+          mode: tokenValues
+        };
+      }
+      
+      // Place token in appropriate category
+      setNestedValue(structuredTokens[category], tokenPath, tokenData);
     }
     
     figma.ui.postMessage({ 
       type: 'tokens-exported', 
-      data: tokens 
+      data: structuredTokens 
     });
     
   } catch (error) {
@@ -127,45 +140,58 @@ async function exportSelectedTokens(selectedCollectionIds) {
 async function exportTokens() {
   try {
     const localVariables = await figma.variables.getLocalVariablesAsync();
-    const tokens = {};
+    const structuredTokens = {
+      primitives: {},
+      globals: {},
+      semantics: {},
+      component: {}
+    };
     
     for (const variable of localVariables) {
       const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
       
-      if (!tokens[collection.name]) {
-        tokens[collection.name] = {};
-      }
+      // Process each mode to get token values
+      const tokenValues = {};
+      const hasMultipleModes = collection.modes.length > 1;
       
-      // Get values for each mode
-      const tokenData = {
-        name: variable.name,
-        type: variable.resolvedType,
-        scopes: variable.scopes,
-        values: {}
-      };
-      
-      // Process each mode
       for (const modeId of collection.modes.map(mode => mode.modeId)) {
         const mode = collection.modes.find(m => m.modeId === modeId);
         const value = variable.valuesByMode[modeId];
         
         if (value !== undefined) {
           if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            // Handle variable aliases
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenData.values[mode.name] = `{${aliasedVariable.name}}`;
+            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenData.values[mode.name] = value;
+            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
           }
         }
       }
       
-      tokens[collection.name][variable.name] = tokenData;
+      // Determine category based on collection name and variable type
+      const category = categorizeToken(collection.name, variable.name, variable.resolvedType);
+      const tokenPath = parseTokenPath(variable.name);
+      
+      // Create token structure
+      const tokenData = {
+        value: tokenValues[collection.modes[0].name] || null,
+        type: "other"
+      };
+      
+      // Add mode extensions if multiple modes exist
+      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
+        tokenData["$extensions"] = {
+          mode: tokenValues
+        };
+      }
+      
+      // Place token in appropriate category
+      setNestedValue(structuredTokens[category], tokenPath, tokenData);
     }
     
     figma.ui.postMessage({ 
       type: 'tokens-exported', 
-      data: tokens 
+      data: structuredTokens 
     });
     
   } catch (error) {
@@ -206,4 +232,83 @@ async function exportCollections() {
       message: 'Erro ao exportar collections: ' + error.message 
     });
   }
+}
+
+// Helper function to format token values based on type
+function formatTokenValue(value, type) {
+  if (type === 'COLOR') {
+    if (typeof value === 'object' && value.r !== undefined) {
+      // Convert RGB to hex
+      const r = Math.round(value.r * 255);
+      const g = Math.round(value.g * 255);
+      const b = Math.round(value.b * 255);
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+    }
+  } else if (type === 'FLOAT') {
+    // Convert numbers to px for spacing, border, etc.
+    return `${value}px`;
+  } else if (type === 'STRING') {
+    return value;
+  }
+  
+  return value;
+}
+
+// Helper function to categorize tokens based on naming and type
+function categorizeToken(collectionName, tokenName, type) {
+  const lowerName = tokenName.toLowerCase();
+  const lowerCollection = collectionName.toLowerCase();
+  
+  // Check for component tokens
+  if (lowerName.includes('button') || lowerName.includes('card') || 
+      lowerName.includes('input') || lowerName.includes('tag') || 
+      lowerName.includes('tab') || lowerCollection.includes('component')) {
+    return 'component';
+  }
+  
+  // Check for semantic tokens
+  if (lowerName.includes('background') || lowerName.includes('text') || 
+      lowerName.includes('border') || lowerCollection.includes('semantic')) {
+    return 'semantics';
+  }
+  
+  // Check for global tokens (themes, brands)
+  if (lowerCollection.includes('global') || lowerCollection.includes('theme') ||
+      lowerName.includes('primary') || lowerName.includes('secondary') ||
+      lowerName.includes('accent')) {
+    return 'globals';
+  }
+  
+  // Default to primitives
+  return 'primitives';
+}
+
+// Helper function to parse token path from name
+function parseTokenPath(tokenName) {
+  // Convert token name to nested path
+  // Examples: "color/neutral/100" -> ["color", "neutral", "100"]
+  //           "spacing-4" -> ["spacing", "4"]
+  //           "button.bg" -> ["button", "bg"]
+  
+  let path = tokenName.replace(/[\/-]/g, '.').split('.');
+  
+  // Clean up path elements
+  path = path.map(part => part.trim()).filter(part => part.length > 0);
+  
+  return path;
+}
+
+// Helper function to set nested values in object
+function setNestedValue(obj, path, value) {
+  let current = obj;
+  
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (!current[key]) {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  
+  current[path[path.length - 1]] = value;
 }
