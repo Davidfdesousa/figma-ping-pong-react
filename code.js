@@ -1,6 +1,5 @@
-
 // This is the main plugin code that runs in the Figma environment
-figma.showUI(__html__, { width: 400, height: 300 });
+figma.showUI(__html__, { width: 500, height: 600 });
 
 figma.ui.onmessage = msg => {
   console.log('Received message in code.js:', msg);
@@ -10,8 +9,18 @@ figma.ui.onmessage = msg => {
     figma.ui.postMessage({ type: 'pong' });
   }
   
+  if (msg.type === 'load-collections') {
+    console.log('📁 Carregando collections...');
+    loadCollections();
+  }
+  
+  if (msg.type === 'export-selected-tokens') {
+    console.log('🎨 Exportando tokens selecionados...');
+    exportSelectedTokens(msg.selectedCollections);
+  }
+  
   if (msg.type === 'export-tokens') {
-    console.log('🎨 Exportando tokens...');
+    console.log('🎨 Exportando todos os tokens...');
     exportTokens();
   }
   
@@ -24,6 +33,96 @@ figma.ui.onmessage = msg => {
     figma.closePlugin();
   }
 };
+
+async function loadCollections() {
+  try {
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const collectionsData = [];
+    
+    for (const collection of collections) {
+      const variableCount = collection.variableIds.length;
+      collectionsData.push({
+        id: collection.id,
+        name: collection.name,
+        variableCount: variableCount,
+        modes: collection.modes.map(mode => ({
+          modeId: mode.modeId,
+          name: mode.name
+        }))
+      });
+    }
+    
+    figma.ui.postMessage({ 
+      type: 'collections-loaded', 
+      data: collectionsData 
+    });
+    
+  } catch (error) {
+    console.error('Erro ao carregar collections:', error);
+    figma.ui.postMessage({ 
+      type: 'load-error', 
+      message: 'Erro ao carregar collections: ' + error.message 
+    });
+  }
+}
+
+async function exportSelectedTokens(selectedCollectionIds) {
+  try {
+    const localVariables = await figma.variables.getLocalVariablesAsync();
+    const tokens = {};
+    
+    for (const variable of localVariables) {
+      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+      
+      // Only export if collection is selected
+      if (!selectedCollectionIds.includes(collection.id)) {
+        continue;
+      }
+      
+      if (!tokens[collection.name]) {
+        tokens[collection.name] = {};
+      }
+      
+      // Get values for each mode
+      const tokenData = {
+        name: variable.name,
+        type: variable.resolvedType,
+        scopes: variable.scopes,
+        values: {}
+      };
+      
+      // Process each mode
+      for (const modeId of collection.modes.map(mode => mode.modeId)) {
+        const mode = collection.modes.find(m => m.modeId === modeId);
+        const value = variable.valuesByMode[modeId];
+        
+        if (value !== undefined) {
+          if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+            // Handle variable aliases
+            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
+            tokenData.values[mode.name] = `{${aliasedVariable.name}}`;
+          } else {
+            tokenData.values[mode.name] = value;
+          }
+        }
+      }
+      
+      tokens[collection.name][variable.name] = tokenData;
+    }
+    
+    figma.ui.postMessage({ 
+      type: 'tokens-exported', 
+      data: tokens 
+    });
+    
+  } catch (error) {
+    console.error('Erro ao exportar tokens selecionados:', error);
+    figma.ui.postMessage({ 
+      type: 'export-error', 
+      message: 'Erro ao exportar tokens selecionados: ' + error.message 
+    });
+  }
+}
 
 async function exportTokens() {
   try {

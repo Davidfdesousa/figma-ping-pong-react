@@ -78,6 +78,73 @@
       cursor: not-allowed;
     }
     
+    .collections-section {
+      max-height: 250px;
+      overflow-y: auto;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+      background: white;
+      margin: 12px 0;
+    }
+    
+    .collection-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .collection-item:hover {
+      background: #f9f9f9;
+    }
+    
+    .collection-item:last-child {
+      border-bottom: none;
+    }
+    
+    .collection-checkbox {
+      margin-right: 12px;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    
+    .collection-info {
+      flex: 1;
+    }
+    
+    .collection-name {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: #333;
+    }
+    
+    .collection-details {
+      font-size: 11px;
+      color: #666;
+    }
+    
+    .collection-modes {
+      font-size: 10px;
+      color: #999;
+      margin-top: 2px;
+    }
+    
+    .select-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .select-controls button {
+      padding: 6px 12px;
+      font-size: 11px;
+      background: #f0f0f0;
+      color: #333;
+    }
+    
     .status {
       font-size: 12px;
       color: #666;
@@ -117,6 +184,10 @@
       padding-top: 16px;
       border-top: 1px solid #e0e0e0;
     }
+    
+    #collections-container {
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -126,15 +197,34 @@
     </div>
     
     <div class="export-section">
-      <h4>📊 Exportar Tokens</h4>
-      <p>Exporta todas as variáveis/tokens do seu arquivo Figma, incluindo cores, tipografia, espaçamentos, etc.</p>
-      <button id="export-tokens-btn">Exportar Tokens</button>
+      <h4>🎯 Exportar Collections Selecionadas</h4>
+      <p>Visualize e selecione quais collections você deseja exportar.</p>
+      <button id="load-collections-btn">Carregar Collections</button>
+      
+      <div id="collections-container">
+        <div class="select-controls">
+          <button id="select-all-btn">Selecionar Todas</button>
+          <button id="select-none-btn">Desselecionar Todas</button>
+        </div>
+        
+        <div id="collections-list" class="collections-section">
+          <!-- Collections will be loaded here -->
+        </div>
+        
+        <button id="export-selected-btn">Exportar Selecionadas</button>
+      </div>
     </div>
     
     <div class="export-section">
-      <h4>📁 Exportar Collections</h4>
+      <h4>📊 Exportar Todos os Tokens</h4>
+      <p>Exporta todas as variáveis/tokens do seu arquivo Figma, incluindo cores, tipografia, espaçamentos, etc.</p>
+      <button id="export-tokens-btn">Exportar Todos os Tokens</button>
+    </div>
+    
+    <div class="export-section">
+      <h4>📁 Exportar Todas as Collections</h4>
       <p>Exporta as collections de variáveis, incluindo seus modos e estrutura organizacional.</p>
-      <button id="export-collections-btn">Exportar Collections</button>
+      <button id="export-collections-btn">Exportar Todas as Collections</button>
     </div>
     
     <div id="status" class="status" style="display: none;"></div>
@@ -149,6 +239,8 @@
   </div>
 
   <script>
+    let collections = [];
+    
     // Listen for messages from the plugin code
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
@@ -158,9 +250,15 @@
         showStatus('Pong recebido! ✅', 'success');
       }
       
+      if (msg && msg.type === 'collections-loaded') {
+        collections = msg.data;
+        displayCollections(collections);
+        showStatus('Collections carregadas! ✅', 'success');
+      }
+      
       if (msg && msg.type === 'tokens-exported') {
         showStatus('Tokens exportados com sucesso! ✅', 'success');
-        createDownloadLink('tokens.json', msg.data, 'Baixar Tokens JSON');
+        createDownloadLink('selected-tokens.json', msg.data, 'Baixar Tokens Selecionados JSON');
       }
       
       if (msg && msg.type === 'collections-exported') {
@@ -168,10 +266,41 @@
         createDownloadLink('collections.json', msg.data, 'Baixar Collections JSON');
       }
       
-      if (msg && msg.type === 'export-error') {
+      if (msg && msg.type === 'load-error' || msg && msg.type === 'export-error') {
         showStatus('Erro: ' + msg.message, 'error');
       }
     };
+
+    function displayCollections(collectionsData) {
+      const container = document.getElementById('collections-container');
+      const listElement = document.getElementById('collections-list');
+      
+      container.style.display = 'block';
+      listElement.innerHTML = '';
+      
+      collectionsData.forEach(collection => {
+        const item = document.createElement('div');
+        item.className = 'collection-item';
+        
+        const modesText = collection.modes.map(mode => mode.name).join(', ');
+        
+        item.innerHTML = `
+          <input type="checkbox" class="collection-checkbox" data-collection-id="${collection.id}" checked>
+          <div class="collection-info">
+            <div class="collection-name">${collection.name}</div>
+            <div class="collection-details">${collection.variableCount} variáveis</div>
+            <div class="collection-modes">Modos: ${modesText}</div>
+          </div>
+        `;
+        
+        listElement.appendChild(item);
+      });
+    }
+    
+    function getSelectedCollections() {
+      const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
+      return Array.from(checkboxes).map(cb => cb.getAttribute('data-collection-id'));
+    }
 
     function showStatus(message, type = '') {
       const statusEl = document.getElementById('status');
@@ -203,15 +332,44 @@
       downloadArea.appendChild(link);
     }
 
-    // Export tokens
+    // Load collections
+    document.getElementById('load-collections-btn').onclick = () => {
+      showStatus('Carregando collections...', '');
+      parent.postMessage({ pluginMessage: { type: 'load-collections' } }, '*');
+    };
+
+    // Export selected collections
+    document.getElementById('export-selected-btn').onclick = () => {
+      const selectedIds = getSelectedCollections();
+      if (selectedIds.length === 0) {
+        showStatus('Selecione pelo menos uma collection!', 'error');
+        return;
+      }
+      showStatus('Exportando collections selecionadas...', '');
+      parent.postMessage({ pluginMessage: { type: 'export-selected-tokens', selectedCollections: selectedIds } }, '*');
+    };
+
+    // Select all collections
+    document.getElementById('select-all-btn').onclick = () => {
+      const checkboxes = document.querySelectorAll('.collection-checkbox');
+      checkboxes.forEach(cb => cb.checked = true);
+    };
+
+    // Select no collections
+    document.getElementById('select-none-btn').onclick = () => {
+      const checkboxes = document.querySelectorAll('.collection-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+    };
+
+    // Export all tokens
     document.getElementById('export-tokens-btn').onclick = () => {
-      showStatus('Exportando tokens...', '');
+      showStatus('Exportando todos os tokens...', '');
       parent.postMessage({ pluginMessage: { type: 'export-tokens' } }, '*');
     };
 
-    // Export collections
+    // Export all collections
     document.getElementById('export-collections-btn').onclick = () => {
-      showStatus('Exportando collections...', '');
+      showStatus('Exportando todas as collections...', '');
       parent.postMessage({ pluginMessage: { type: 'export-collections' } }, '*');
     };
 
