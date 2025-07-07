@@ -60,12 +60,7 @@ async function loadCollections() {
 async function exportSelectedTokens(selectedCollectionIds) {
   try {
     const localVariables = await figma.variables.getLocalVariablesAsync();
-    const structuredTokens = {
-      primitives: {},
-      globals: {},
-      semantics: {},
-      component: {}
-    };
+    const structuredTokens = {};
     
     for (const variable of localVariables) {
       const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
@@ -93,9 +88,14 @@ async function exportSelectedTokens(selectedCollectionIds) {
         }
       }
       
-      // Determine category based on collection name and variable type
-      const category = categorizeToken(collection.name, variable.name, variable.resolvedType);
+      // Use collection name directly as category
+      const collectionName = collection.name;
       const tokenPath = parseTokenPath(variable.name);
+      
+      // Initialize collection category if it doesn't exist
+      if (!structuredTokens[collectionName]) {
+        structuredTokens[collectionName] = {};
+      }
       
       // Create token structure
       const tokenData = {
@@ -110,8 +110,8 @@ async function exportSelectedTokens(selectedCollectionIds) {
         };
       }
       
-      // Place token in appropriate category
-      setNestedValue(structuredTokens[category], tokenPath, tokenData);
+      // Place token in collection category using exact Figma structure
+      setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
     
     figma.ui.postMessage({ 
@@ -149,44 +149,6 @@ function formatTokenValue(value, type) {
   return value;
 }
 
-// Helper function to categorize tokens based on naming and type
-function categorizeToken(collectionName, tokenName, type) {
-  const lowerCollection = collectionName.toLowerCase();
-  
-  // Map exactly to Figma collection names
-  if (lowerCollection === 'primitives') {
-    return 'primitives';
-  }
-  
-  if (lowerCollection === 'globals' || lowerCollection === 'brand') {
-    return 'globals';
-  }
-  
-  if (lowerCollection === 'semantics') {
-    return 'semantics';
-  }
-  
-  if (lowerCollection === 'component-tokens' || lowerCollection === 'component') {
-    return 'component';
-  }
-  
-  // Fallback based on token naming if collection name doesn't match
-  const lowerName = tokenName.toLowerCase();
-  
-  if (lowerName.includes('button') || lowerName.includes('card') || 
-      lowerName.includes('input') || lowerName.includes('tag') || 
-      lowerName.includes('tab')) {
-    return 'component';
-  }
-  
-  if (lowerName.includes('background') || lowerName.includes('text') || 
-      lowerName.includes('border')) {
-    return 'semantics';
-  }
-  
-  // Default to primitives
-  return 'primitives';
-}
 
 // Helper function to parse token path from name
 function parseTokenPath(tokenName) {
