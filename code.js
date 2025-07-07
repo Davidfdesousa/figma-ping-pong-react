@@ -266,16 +266,16 @@ function categorizeToken(collectionName, tokenName, type) {
     return 'component';
   }
   
-  // Check for semantic tokens
+  // Check for semantic tokens (including primary and accent)
   if (lowerName.includes('background') || lowerName.includes('text') || 
-      lowerName.includes('border') || lowerCollection.includes('semantic')) {
+      lowerName.includes('border') || lowerCollection.includes('semantic') ||
+      lowerName.includes('primary') || lowerName.includes('accent')) {
     return 'semantics';
   }
   
   // Check for global tokens (themes, brands)
   if (lowerCollection.includes('global') || lowerCollection.includes('theme') ||
-      lowerName.includes('primary') || lowerName.includes('secondary') ||
-      lowerName.includes('accent')) {
+      lowerName.includes('secondary')) {
     return 'globals';
   }
   
