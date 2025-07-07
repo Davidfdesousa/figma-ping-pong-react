@@ -256,27 +256,37 @@ function formatTokenValue(value, type) {
 
 // Helper function to categorize tokens based on naming and type
 function categorizeToken(collectionName, tokenName, type) {
-  const lowerName = tokenName.toLowerCase();
   const lowerCollection = collectionName.toLowerCase();
   
-  // Check for component tokens
-  if (lowerName.includes('button') || lowerName.includes('card') || 
-      lowerName.includes('input') || lowerName.includes('tag') || 
-      lowerName.includes('tab') || lowerCollection.includes('component')) {
-    return 'component';
+  // Map exactly to Figma collection names
+  if (lowerCollection === 'primitives') {
+    return 'primitives';
   }
   
-  // Check for semantic tokens (including primary and accent)
-  if (lowerName.includes('background') || lowerName.includes('text') || 
-      lowerName.includes('border') || lowerCollection.includes('semantic') ||
-      lowerName.includes('primary') || lowerName.includes('accent')) {
+  if (lowerCollection === 'globals' || lowerCollection === 'brand') {
+    return 'globals';
+  }
+  
+  if (lowerCollection === 'semantics') {
     return 'semantics';
   }
   
-  // Check for global tokens (themes, brands)
-  if (lowerCollection.includes('global') || lowerCollection.includes('theme') ||
-      lowerName.includes('secondary')) {
-    return 'globals';
+  if (lowerCollection === 'component-tokens' || lowerCollection === 'component') {
+    return 'component';
+  }
+  
+  // Fallback based on token naming if collection name doesn't match
+  const lowerName = tokenName.toLowerCase();
+  
+  if (lowerName.includes('button') || lowerName.includes('card') || 
+      lowerName.includes('input') || lowerName.includes('tag') || 
+      lowerName.includes('tab')) {
+    return 'component';
+  }
+  
+  if (lowerName.includes('background') || lowerName.includes('text') || 
+      lowerName.includes('border')) {
+    return 'semantics';
   }
   
   // Default to primitives
