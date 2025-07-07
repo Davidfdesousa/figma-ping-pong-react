@@ -19,15 +19,6 @@ figma.ui.onmessage = msg => {
     exportSelectedTokens(msg.selectedCollections);
   }
   
-  if (msg.type === 'export-tokens') {
-    console.log('🎨 Exportando todos os tokens...');
-    exportTokens();
-  }
-  
-  if (msg.type === 'export-collections') {
-    console.log('📁 Exportando collections...');
-    exportCollections();
-  }
   
   if (msg.type === 'close') {
     figma.closePlugin();
@@ -137,102 +128,6 @@ async function exportSelectedTokens(selectedCollectionIds) {
   }
 }
 
-async function exportTokens() {
-  try {
-    const localVariables = await figma.variables.getLocalVariablesAsync();
-    const structuredTokens = {
-      primitives: {},
-      globals: {},
-      semantics: {},
-      component: {}
-    };
-    
-    for (const variable of localVariables) {
-      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
-      
-      // Process each mode to get token values
-      const tokenValues = {};
-      const hasMultipleModes = collection.modes.length > 1;
-      
-      for (const modeId of collection.modes.map(mode => mode.modeId)) {
-        const mode = collection.modes.find(m => m.modeId === modeId);
-        const value = variable.valuesByMode[modeId];
-        
-        if (value !== undefined) {
-          if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
-          } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
-          }
-        }
-      }
-      
-      // Determine category based on collection name and variable type
-      const category = categorizeToken(collection.name, variable.name, variable.resolvedType);
-      const tokenPath = parseTokenPath(variable.name);
-      
-      // Create token structure
-      const tokenData = {
-        value: tokenValues[collection.modes[0].name] || null,
-        type: "other"
-      };
-      
-      // Add mode extensions if multiple modes exist
-      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
-        tokenData["$extensions"] = {
-          mode: tokenValues
-        };
-      }
-      
-      // Place token in appropriate category
-      setNestedValue(structuredTokens[category], tokenPath, tokenData);
-    }
-    
-    figma.ui.postMessage({ 
-      type: 'tokens-exported', 
-      data: structuredTokens 
-    });
-    
-  } catch (error) {
-    console.error('Erro ao exportar tokens:', error);
-    figma.ui.postMessage({ 
-      type: 'export-error', 
-      message: 'Erro ao exportar tokens: ' + error.message 
-    });
-  }
-}
-
-async function exportCollections() {
-  try {
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    const collectionsData = {};
-    
-    for (const collection of collections) {
-      collectionsData[collection.name] = {
-        id: collection.id,
-        name: collection.name,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        })),
-        variableIds: collection.variableIds
-      };
-    }
-    
-    figma.ui.postMessage({ 
-      type: 'collections-exported', 
-      data: collectionsData 
-    });
-    
-  } catch (error) {
-    console.error('Erro ao exportar collections:', error);
-    figma.ui.postMessage({ 
-      type: 'export-error', 
-      message: 'Erro ao exportar collections: ' + error.message 
-    });
-  }
-}
 
 // Helper function to format token values based on type
 function formatTokenValue(value, type) {

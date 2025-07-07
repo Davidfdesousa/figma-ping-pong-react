@@ -197,7 +197,7 @@
     </div>
     
     <div class="export-section">
-      <h4>🎯 Exportar Collections Selecionadas</h4>
+      <h4>🎯 Exportar Collections</h4>
       <p>Visualize e selecione quais collections você deseja exportar.</p>
       <button id="load-collections-btn">Carregar Collections</button>
       
@@ -211,20 +211,8 @@
           <!-- Collections will be loaded here -->
         </div>
         
-        <button id="export-selected-btn">Exportar Selecionadas</button>
+        <button id="export-selected-btn">Exportar Collections</button>
       </div>
-    </div>
-    
-    <div class="export-section">
-      <h4>📊 Exportar Todos os Tokens</h4>
-      <p>Exporta todas as variáveis/tokens do seu arquivo Figma, incluindo cores, tipografia, espaçamentos, etc.</p>
-      <button id="export-tokens-btn">Exportar Todos os Tokens</button>
-    </div>
-    
-    <div class="export-section">
-      <h4>📁 Exportar Todas as Collections</h4>
-      <p>Exporta as collections de variáveis, incluindo seus modos e estrutura organizacional.</p>
-      <button id="export-collections-btn">Exportar Todas as Collections</button>
     </div>
     
     <div id="status" class="status" style="display: none;"></div>
@@ -361,17 +349,6 @@
       checkboxes.forEach(cb => cb.checked = false);
     };
 
-    // Export all tokens
-    document.getElementById('export-tokens-btn').onclick = () => {
-      showStatus('Exportando todos os tokens...', '');
-      parent.postMessage({ pluginMessage: { type: 'export-tokens' } }, '*');
-    };
-
-    // Export all collections
-    document.getElementById('export-collections-btn').onclick = () => {
-      showStatus('Exportando todas as collections...', '');
-      parent.postMessage({ pluginMessage: { type: 'export-collections' } }, '*');
-    };
 
     // Close plugin
     document.getElementById('close-btn').onclick = () => {
