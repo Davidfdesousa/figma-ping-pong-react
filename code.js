@@ -1,5 +1,5 @@
 // This is the main plugin code that runs in the Figma environment
-figma.showUI(__html__, { width: 500, height: 600 });
+figma.showUI(__html__, { width: 500, height: 800 });
 
 figma.ui.onmessage = msg => {
   console.log('Received message in code.js:', msg);
