@@ -323,7 +323,7 @@ async function createGitHubPR(config, tokensData) {
     
     // Create or update file
     const filePath = 'src/figma-output/selected-tokens.json';
-    const fileContent = btoa(JSON.stringify(tokensData, null, 2));
+    const fileContent = Buffer.from(JSON.stringify(tokensData, null, 2)).toString('base64');
     
     // Check if file exists to get SHA
     let fileSha = null;
