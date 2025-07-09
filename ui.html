@@ -222,6 +222,11 @@
           <!-- Collections will be loaded here -->
         </div>
         
+        <div style="margin: 12px 0;">
+          <label for="commit-description" style="display: block; font-size: 12px; color: #666; margin-bottom: 4px;">Descrição do commit (opcional):</label>
+          <textarea id="commit-description" placeholder="Descreva as alterações feitas nos tokens..." style="width: 100%; padding: 8px; border: 1px solid #e0e0e0; border-radius: 4px; font-size: 12px; height: 60px; resize: vertical; font-family: inherit;"></textarea>
+        </div>
+        
         <div style="display: flex; gap: 8px;">
           <button id="export-selected-btn">Exportar para Download</button>
           <button id="export-to-github-btn" style="background: #28a745;">Exportar para GitHub</button>
@@ -431,8 +436,15 @@
         showStatus('Selecione pelo menos uma collection!', 'error');
         return;
       }
+      const commitDescription = document.getElementById('commit-description').value.trim();
       showStatus('Exportando para GitHub...', '');
-      parent.postMessage({ pluginMessage: { type: 'export-to-github', selectedCollections: selectedIds } }, '*');
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'export-to-github', 
+          selectedCollections: selectedIds,
+          commitDescription: commitDescription
+        } 
+      }, '*');
     };
 
     // Close plugin

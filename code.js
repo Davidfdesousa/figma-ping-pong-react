@@ -62,7 +62,7 @@ figma.ui.onmessage = msg => {
   
   if (msg.type === 'export-to-github') {
     console.log('🚀 Exportando para GitHub...');
-    exportToGitHub(msg.selectedCollections);
+    exportToGitHub(msg.selectedCollections, msg.commitDescription);
   }
   
   if (msg.type === 'close') {
@@ -258,7 +258,7 @@ async function saveGitHubConfig(config) {
   }
 }
 
-async function exportToGitHub(selectedCollectionIds) {
+async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   try {
     // Get GitHub configuration
     const githubConfig = await figma.clientStorage.getAsync('github-config');
@@ -321,7 +321,7 @@ async function exportToGitHub(selectedCollectionIds) {
     }
 
     // Create GitHub PR
-    await createGitHubPR(githubConfig, structuredTokens);
+    await createGitHubPR(githubConfig, structuredTokens, commitDescription);
     
   } catch (error) {
     console.error('Erro ao exportar para GitHub:', error);
@@ -332,7 +332,7 @@ async function exportToGitHub(selectedCollectionIds) {
   }
 }
 
-async function createGitHubPR(config, tokensData) {
+async function createGitHubPR(config, tokensData, commitDescription = '') {
   const { token, repo, owner } = config;
   const apiBase = 'https://api.github.com';
   
@@ -396,8 +396,12 @@ async function createGitHubPR(config, tokensData) {
     }
     
     // Create/update file
+    const commitMessage = commitDescription 
+      ? commitDescription 
+      : `Update Figma tokens - ${new Date().toLocaleString()}`;
+    
     const updateFilePayload = {
-      message: `Update Figma tokens - ${new Date().toLocaleString()}`,
+      message: commitMessage,
       content: fileContent,
       branch: branchName
     };
