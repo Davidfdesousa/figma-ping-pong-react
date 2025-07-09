@@ -197,6 +197,17 @@
     </div>
     
     <div class="export-section">
+      <h4>⚙️ Configuração GitHub</h4>
+      <p>Configure sua conta GitHub para criar PRs automaticamente.</p>
+      <div id="github-config">
+        <input type="text" id="github-token" placeholder="GitHub Personal Access Token" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <input type="text" id="github-owner" placeholder="Owner/Organização (ex: meuusuario)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <input type="text" id="github-repo" placeholder="Nome do repositório" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <button id="save-github-config-btn">Salvar Configuração</button>
+      </div>
+    </div>
+
+    <div class="export-section">
       <h4>🎯 Exportar Collections</h4>
       <p>Visualize e selecione quais collections você deseja exportar.</p>
       <button id="load-collections-btn">Carregar Collections</button>
@@ -211,7 +222,10 @@
           <!-- Collections will be loaded here -->
         </div>
         
-        <button id="export-selected-btn">Exportar Collections</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="export-selected-btn">Exportar para Download</button>
+          <button id="export-to-github-btn" style="background: #28a745;">Exportar para GitHub</button>
+        </div>
       </div>
     </div>
     
@@ -252,6 +266,21 @@
       if (msg && msg.type === 'collections-exported') {
         showStatus('Collections exportadas com sucesso! ✅', 'success');
         createDownloadLink('collections.json', msg.data, 'Baixar Collections JSON');
+      }
+      
+      if (msg && msg.type === 'github-config-saved') {
+        showStatus('Configuração do GitHub salva! ✅', 'success');
+      }
+      
+      if (msg && msg.type === 'github-success') {
+        showStatus('PR criado no GitHub! ✅', 'success');
+        if (msg.prUrl) {
+          createGitHubLink(msg.prUrl);
+        }
+      }
+      
+      if (msg && msg.type === 'github-error') {
+        showStatus('Erro GitHub: ' + msg.message, 'error');
       }
       
       if (msg && msg.type === 'load-error' || msg && msg.type === 'export-error') {
@@ -319,6 +348,20 @@
       
       downloadArea.appendChild(link);
     }
+    
+    function createGitHubLink(prUrl) {
+      const downloadArea = document.getElementById('download-area');
+      downloadArea.style.display = 'block';
+      
+      const link = document.createElement('a');
+      link.href = prUrl;
+      link.target = '_blank';
+      link.textContent = '🔗 Abrir PR no GitHub';
+      link.className = 'download-link';
+      link.style.background = '#28a745';
+      
+      downloadArea.appendChild(link);
+    }
 
     // Load collections
     document.getElementById('load-collections-btn').onclick = () => {
@@ -349,6 +392,32 @@
       checkboxes.forEach(cb => cb.checked = false);
     };
 
+
+    // Save GitHub configuration
+    document.getElementById('save-github-config-btn').onclick = () => {
+      const token = document.getElementById('github-token').value;
+      const owner = document.getElementById('github-owner').value;
+      const repo = document.getElementById('github-repo').value;
+      
+      if (!token || !owner || !repo) {
+        showStatus('Preencha todos os campos da configuração GitHub!', 'error');
+        return;
+      }
+      
+      const config = { token, owner, repo };
+      parent.postMessage({ pluginMessage: { type: 'save-github-config', config } }, '*');
+    };
+
+    // Export to GitHub
+    document.getElementById('export-to-github-btn').onclick = () => {
+      const selectedIds = getSelectedCollections();
+      if (selectedIds.length === 0) {
+        showStatus('Selecione pelo menos uma collection!', 'error');
+        return;
+      }
+      showStatus('Exportando para GitHub...', '');
+      parent.postMessage({ pluginMessage: { type: 'export-to-github', selectedCollections: selectedIds } }, '*');
+    };
 
     // Close plugin
     document.getElementById('close-btn').onclick = () => {

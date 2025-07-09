@@ -19,6 +19,15 @@ figma.ui.onmessage = msg => {
     exportSelectedTokens(msg.selectedCollections);
   }
   
+  if (msg.type === 'save-github-config') {
+    console.log('⚙️ Salvando configuração do GitHub...');
+    saveGitHubConfig(msg.config);
+  }
+  
+  if (msg.type === 'export-to-github') {
+    console.log('🚀 Exportando para GitHub...');
+    exportToGitHub(msg.selectedCollections);
+  }
   
   if (msg.type === 'close') {
     figma.closePlugin();
@@ -178,4 +187,220 @@ function setNestedValue(obj, path, value) {
   }
   
   current[path[path.length - 1]] = value;
+}
+
+// GitHub integration functions
+async function saveGitHubConfig(config) {
+  try {
+    await figma.clientStorage.setAsync('github-config', config);
+    figma.ui.postMessage({ 
+      type: 'github-config-saved',
+      message: 'Configuração do GitHub salva com sucesso!'
+    });
+  } catch (error) {
+    console.error('Erro ao salvar configuração do GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Erro ao salvar configuração: ' + error.message 
+    });
+  }
+}
+
+async function exportToGitHub(selectedCollectionIds) {
+  try {
+    // Get GitHub configuration
+    const githubConfig = await figma.clientStorage.getAsync('github-config');
+    
+    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'Configuração do GitHub não encontrada. Configure primeiro.' 
+      });
+      return;
+    }
+
+    // Generate tokens data
+    const localVariables = await figma.variables.getLocalVariablesAsync();
+    const structuredTokens = {};
+    
+    for (const variable of localVariables) {
+      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+      
+      if (!selectedCollectionIds.includes(collection.id)) {
+        continue;
+      }
+      
+      const tokenValues = {};
+      const hasMultipleModes = collection.modes.length > 1;
+      
+      for (const modeId of collection.modes.map(mode => mode.modeId)) {
+        const mode = collection.modes.find(m => m.modeId === modeId);
+        const value = variable.valuesByMode[modeId];
+        
+        if (value !== undefined) {
+          if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
+            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+          } else {
+            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
+          }
+        }
+      }
+      
+      const collectionName = collection.name;
+      const tokenPath = parseTokenPath(variable.name);
+      
+      if (!structuredTokens[collectionName]) {
+        structuredTokens[collectionName] = {};
+      }
+      
+      const tokenData = {
+        value: tokenValues[collection.modes[0].name] || null,
+        type: "other"
+      };
+      
+      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
+        tokenData["$extensions"] = {
+          mode: tokenValues
+        };
+      }
+      
+      setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
+    }
+
+    // Create GitHub PR
+    await createGitHubPR(githubConfig, structuredTokens);
+    
+  } catch (error) {
+    console.error('Erro ao exportar para GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Erro ao exportar para GitHub: ' + error.message 
+    });
+  }
+}
+
+async function createGitHubPR(config, tokensData) {
+  const { token, repo, owner } = config;
+  const apiBase = 'https://api.github.com';
+  
+  try {
+    // Get main branch SHA
+    const branchResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/git/ref/heads/main`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (!branchResponse.ok) {
+      throw new Error(`Erro ao obter branch principal: ${branchResponse.statusText}`);
+    }
+    
+    const branchData = await branchResponse.json();
+    const mainSha = branchData.object.sha;
+    
+    // Create new branch
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const branchName = `figma-tokens-update-${timestamp}`;
+    
+    const createBranchResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/git/refs`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ref: `refs/heads/${branchName}`,
+        sha: mainSha
+      })
+    });
+    
+    if (!createBranchResponse.ok) {
+      throw new Error(`Erro ao criar branch: ${createBranchResponse.statusText}`);
+    }
+    
+    // Create or update file
+    const filePath = 'src/figma-output/selected-tokens.json';
+    const fileContent = btoa(JSON.stringify(tokensData, null, 2));
+    
+    // Check if file exists to get SHA
+    let fileSha = null;
+    try {
+      const fileResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/contents/${filePath}?ref=${branchName}`, {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (fileResponse.ok) {
+        const fileData = await fileResponse.json();
+        fileSha = fileData.sha;
+      }
+    } catch (e) {
+      // File doesn't exist, which is fine
+    }
+    
+    // Create/update file
+    const updateFilePayload = {
+      message: `Update Figma tokens - ${new Date().toLocaleString()}`,
+      content: fileContent,
+      branch: branchName
+    };
+    
+    if (fileSha) {
+      updateFilePayload.sha = fileSha;
+    }
+    
+    const updateFileResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/contents/${filePath}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(updateFilePayload)
+    });
+    
+    if (!updateFileResponse.ok) {
+      throw new Error(`Erro ao atualizar arquivo: ${updateFileResponse.statusText}`);
+    }
+    
+    // Create Pull Request
+    const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        title: `🎨 Update Figma Design Tokens`,
+        head: branchName,
+        base: 'main',
+        body: `## 🎨 Figma Design Tokens Update\n\nThis PR updates the design tokens exported from Figma.\n\n### Changes:\n- Updated \`${filePath}\` with latest token values\n- Exported at: ${new Date().toLocaleString()}\n\n### Collections Updated:\n${Object.keys(tokensData).map(name => `- ${name}`).join('\n')}\n\n_This PR was automatically generated by the Figma Token Exporter plugin._`
+      })
+    });
+    
+    if (!prResponse.ok) {
+      throw new Error(`Erro ao criar PR: ${prResponse.statusText}`);
+    }
+    
+    const prData = await prResponse.json();
+    
+    figma.ui.postMessage({ 
+      type: 'github-success', 
+      message: 'PR criado com sucesso!',
+      prUrl: prData.html_url
+    });
+    
+  } catch (error) {
+    console.error('Erro na API do GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Erro na API do GitHub: ' + error.message 
+    });
+  }
 }
