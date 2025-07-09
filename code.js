@@ -1,4 +1,35 @@
 // This is the main plugin code that runs in the Figma environment
+
+// Helper function to convert string to base64 (compatible with Figma environment)
+function stringToBase64(str) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  let i = 0;
+  
+  while (i < str.length) {
+    const a = str.charCodeAt(i++);
+    const b = i < str.length ? str.charCodeAt(i++) : 0;
+    const c = i < str.length ? str.charCodeAt(i++) : 0;
+    
+    const bitmap = (a << 16) | (b << 8) | c;
+    
+    result += chars.charAt((bitmap >> 18) & 63);
+    result += chars.charAt((bitmap >> 12) & 63);
+    result += chars.charAt((bitmap >> 6) & 63);
+    result += chars.charAt(bitmap & 63);
+  }
+  
+  // Add padding
+  const padding = str.length % 3;
+  if (padding === 1) {
+    result = result.slice(0, -2) + '==';
+  } else if (padding === 2) {
+    result = result.slice(0, -1) + '=';
+  }
+  
+  return result;
+}
+
 figma.showUI(__html__, { width: 500, height: 800 });
 
 figma.ui.onmessage = msg => {
@@ -323,7 +354,7 @@ async function createGitHubPR(config, tokensData) {
     
     // Create or update file
     const filePath = 'src/figma-output/selected-tokens.json';
-    const fileContent = Buffer.from(JSON.stringify(tokensData, null, 2)).toString('base64');
+    const fileContent = stringToBase64(JSON.stringify(tokensData, null, 2));
     
     // Check if file exists to get SHA
     let fileSha = null;
