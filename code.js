@@ -40,6 +40,11 @@ figma.ui.onmessage = msg => {
     figma.ui.postMessage({ type: 'pong' });
   }
   
+  if (msg.type === 'load-github-config') {
+    console.log('📋 Carregando configuração do GitHub...');
+    loadGitHubConfig();
+  }
+  
   if (msg.type === 'load-collections') {
     console.log('📁 Carregando collections...');
     loadCollections();
@@ -221,6 +226,22 @@ function setNestedValue(obj, path, value) {
 }
 
 // GitHub integration functions
+async function loadGitHubConfig() {
+  try {
+    const config = await figma.clientStorage.getAsync('github-config');
+    figma.ui.postMessage({ 
+      type: 'github-config-loaded',
+      data: config || {}
+    });
+  } catch (error) {
+    console.error('Erro ao carregar configuração do GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-config-loaded',
+      data: {}
+    });
+  }
+}
+
 async function saveGitHubConfig(config) {
   try {
     await figma.clientStorage.setAsync('github-config', config);

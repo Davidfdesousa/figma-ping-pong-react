@@ -252,6 +252,10 @@
         showStatus('Pong recebido! ✅', 'success');
       }
       
+      if (msg && msg.type === 'github-config-loaded') {
+        loadGitHubConfigFields(msg.data);
+      }
+      
       if (msg && msg.type === 'collections-loaded') {
         collections = msg.data;
         displayCollections(collections);
@@ -363,6 +367,18 @@
       downloadArea.appendChild(link);
     }
 
+    function loadGitHubConfigFields(config) {
+      if (config.token) {
+        document.getElementById('github-token').value = config.token;
+      }
+      if (config.owner) {
+        document.getElementById('github-owner').value = config.owner;
+      }
+      if (config.repo) {
+        document.getElementById('github-repo').value = config.repo;
+      }
+    }
+
     // Load collections
     document.getElementById('load-collections-btn').onclick = () => {
       showStatus('Carregando collections...', '');
@@ -423,6 +439,9 @@
     document.getElementById('close-btn').onclick = () => {
       parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
     };
+
+    // Load GitHub config on startup
+    parent.postMessage({ pluginMessage: { type: 'load-github-config' } }, '*');
   </script>
 </body>
 </html>
