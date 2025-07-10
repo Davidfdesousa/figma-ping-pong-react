@@ -1,6 +1,118 @@
 // This is the main plugin code that runs in the Figma environment
 
-// Helper function to convert string to base64 (compatible with Figma environment)
+// Import services
+// Note: In Figma plugin environment, we need to inline the imports
+// Token Service functions
+async function loadCollections() {
+  try {
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const collectionsData = [];
+    
+    for (const collection of collections) {
+      const variableCount = collection.variableIds.length;
+      collectionsData.push({
+        id: collection.id,
+        name: collection.name,
+        variableCount: variableCount,
+        modes: collection.modes.map(mode => ({
+          modeId: mode.modeId,
+          name: mode.name
+        }))
+      });
+    }
+    
+    figma.ui.postMessage({ 
+      type: 'collections-loaded', 
+      data: collectionsData 
+    });
+    
+  } catch (error) {
+    console.error('Erro ao carregar collections:', error);
+    figma.ui.postMessage({ 
+      type: 'load-error', 
+      message: 'Erro ao carregar collections: ' + error.message 
+    });
+  }
+}
+
+async function exportSelectedTokens(selectedCollectionIds) {
+  try {
+    const structuredTokens = await generateTokensData(selectedCollectionIds);
+    
+    figma.ui.postMessage({ 
+      type: 'tokens-exported', 
+      data: structuredTokens 
+    });
+    
+  } catch (error) {
+    console.error('Erro ao exportar tokens selecionados:', error);
+    figma.ui.postMessage({ 
+      type: 'export-error', 
+      message: 'Erro ao exportar tokens selecionados: ' + error.message 
+    });
+  }
+}
+
+// GitHub Service functions
+async function loadGitHubConfig() {
+  try {
+    const config = await figma.clientStorage.getAsync('github-config');
+    figma.ui.postMessage({ 
+      type: 'github-config-loaded',
+      data: config || {}
+    });
+  } catch (error) {
+    console.error('Erro ao carregar configuração do GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-config-loaded',
+      data: {}
+    });
+  }
+}
+
+async function saveGitHubConfig(config) {
+  try {
+    await figma.clientStorage.setAsync('github-config', config);
+    figma.ui.postMessage({ 
+      type: 'github-config-saved',
+      message: 'Configuração do GitHub salva com sucesso!'
+    });
+  } catch (error) {
+    console.error('Erro ao salvar configuração do GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Erro ao salvar configuração: ' + error.message 
+    });
+  }
+}
+
+async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
+  try {
+    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+    const githubConfig = await figma.clientStorage.getAsync('github-config');
+    
+    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'Configuração do GitHub não encontrada. Configure primeiro.' 
+      });
+      return;
+    }
+
+    const structuredTokens = await generateTokensData(selectedCollectionIds);
+    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
+    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
+    
+  } catch (error) {
+    console.error('Erro ao exportar para GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Erro ao exportar para GitHub: ' + error.message 
+    });
+  }
+}
+
+// Helper functions
 function stringToBase64(str) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
@@ -19,7 +131,6 @@ function stringToBase64(str) {
     result += chars.charAt(bitmap & 63);
   }
   
-  // Add padding
   const padding = str.length % 3;
   if (padding === 1) {
     result = result.slice(0, -2) + '==';
@@ -70,272 +181,57 @@ figma.ui.onmessage = (msg) => {
   }
 };
 
-async function loadCollections() {
-  try {
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    const collectionsData = [];
+// Token generation helper
+async function generateTokensData(selectedCollectionIds) {
+  const localVariables = await figma.variables.getLocalVariablesAsync();
+  const structuredTokens = {};
+  
+  for (const variable of localVariables) {
+    const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
     
-    for (const collection of collections) {
-      const variableCount = collection.variableIds.length;
-      collectionsData.push({
-        id: collection.id,
-        name: collection.name,
-        variableCount: variableCount,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        }))
-      });
+    if (!selectedCollectionIds.includes(collection.id)) {
+      continue;
     }
     
-    figma.ui.postMessage({ 
-      type: 'collections-loaded', 
-      data: collectionsData 
-    });
+    const tokenValues = {};
+    const hasMultipleModes = collection.modes.length > 1;
     
-  } catch (error) {
-    console.error('Erro ao carregar collections:', error);
-    figma.ui.postMessage({ 
-      type: 'load-error', 
-      message: 'Erro ao carregar collections: ' + error.message 
-    });
-  }
-}
-
-async function exportSelectedTokens(selectedCollectionIds) {
-  try {
-    const localVariables = await figma.variables.getLocalVariablesAsync();
-    const structuredTokens = {};
-    
-    for (const variable of localVariables) {
-      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+    for (const modeId of collection.modes.map(mode => mode.modeId)) {
+      const mode = collection.modes.find(m => m.modeId === modeId);
+      const value = variable.valuesByMode[modeId];
       
-      // Only export if collection is selected
-      if (!selectedCollectionIds.includes(collection.id)) {
-        continue;
-      }
-      
-      // Process each mode to get token values
-      const tokenValues = {};
-      const hasMultipleModes = collection.modes.length > 1;
-      
-      for (const modeId of collection.modes.map(mode => mode.modeId)) {
-        const mode = collection.modes.find(m => m.modeId === modeId);
-        const value = variable.valuesByMode[modeId];
-        
-        if (value !== undefined) {
-          if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
-          } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
-          }
+      if (value !== undefined) {
+        if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+          const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
+          tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+        } else {
+          tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
         }
       }
-      
-      // Use collection name directly as category
-      const collectionName = collection.name;
-      const tokenPath = parseTokenPath(variable.name);
-      
-      // Initialize collection category if it doesn't exist
-      if (!structuredTokens[collectionName]) {
-        structuredTokens[collectionName] = {};
-      }
-      
-      // Create token structure
-      const tokenData = {
-        value: tokenValues[collection.modes[0].name] || null,
-        type: "other"
+    }
+    
+    const collectionName = collection.name;
+    const tokenPath = parseTokenPath(variable.name);
+    
+    if (!structuredTokens[collectionName]) {
+      structuredTokens[collectionName] = {};
+    }
+    
+    const tokenData = {
+      value: tokenValues[collection.modes[0].name] || null,
+      type: "other"
+    };
+    
+    if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
+      tokenData["$extensions"] = {
+        mode: tokenValues
       };
-      
-      // Add mode extensions if multiple modes exist
-      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
-        tokenData["$extensions"] = {
-          mode: tokenValues
-        };
-      }
-      
-      // Place token in collection category using exact Figma structure
-      setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
     
-    figma.ui.postMessage({ 
-      type: 'tokens-exported', 
-      data: structuredTokens 
-    });
-    
-  } catch (error) {
-    console.error('Erro ao exportar tokens selecionados:', error);
-    figma.ui.postMessage({ 
-      type: 'export-error', 
-      message: 'Erro ao exportar tokens selecionados: ' + error.message 
-    });
-  }
-}
-
-
-// Helper function to format token values based on type
-function formatTokenValue(value, type) {
-  if (type === 'COLOR') {
-    if (typeof value === 'object' && value.r !== undefined) {
-      // Convert RGB to hex
-      const r = Math.round(value.r * 255);
-      const g = Math.round(value.g * 255);
-      const b = Math.round(value.b * 255);
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
-    }
-  } else if (type === 'FLOAT') {
-    // Convert numbers to px for spacing, border, etc.
-    return `${value}px`;
-  } else if (type === 'STRING') {
-    return value;
+    setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
   }
   
-  return value;
-}
-
-
-// Helper function to parse token path from name
-function parseTokenPath(tokenName) {
-  // Convert token name to nested path
-  // Examples: "color/neutral/100" -> ["color", "neutral", "100"]
-  //           "spacing-4" -> ["spacing", "4"]
-  //           "button.bg" -> ["button", "bg"]
-  
-  let path = tokenName.replace(/[\/-]/g, '.').split('.');
-  
-  // Clean up path elements
-  path = path.map(part => part.trim()).filter(part => part.length > 0);
-  
-  return path;
-}
-
-// Helper function to set nested values in object
-function setNestedValue(obj, path, value) {
-  let current = obj;
-  
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i];
-    if (!current[key]) {
-      current[key] = {};
-    }
-    current = current[key];
-  }
-  
-  current[path[path.length - 1]] = value;
-}
-
-// GitHub integration functions
-async function loadGitHubConfig() {
-  try {
-    const config = await figma.clientStorage.getAsync('github-config');
-    figma.ui.postMessage({ 
-      type: 'github-config-loaded',
-      data: config || {}
-    });
-  } catch (error) {
-    console.error('Erro ao carregar configuração do GitHub:', error);
-    figma.ui.postMessage({ 
-      type: 'github-config-loaded',
-      data: {}
-    });
-  }
-}
-
-async function saveGitHubConfig(config) {
-  try {
-    await figma.clientStorage.setAsync('github-config', config);
-    figma.ui.postMessage({ 
-      type: 'github-config-saved',
-      message: 'Configuração do GitHub salva com sucesso!'
-    });
-  } catch (error) {
-    console.error('Erro ao salvar configuração do GitHub:', error);
-    figma.ui.postMessage({ 
-      type: 'github-error', 
-      message: 'Erro ao salvar configuração: ' + error.message 
-    });
-  }
-}
-
-async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
-  try {
-    // Load previous version for comparison BEFORE generating new data
-    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
-
-    // Get GitHub configuration
-    const githubConfig = await figma.clientStorage.getAsync('github-config');
-    
-    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
-      figma.ui.postMessage({ 
-        type: 'github-error', 
-        message: 'Configuração do GitHub não encontrada. Configure primeiro.' 
-      });
-      return;
-    }
-
-    // Generate tokens data
-    const localVariables = await figma.variables.getLocalVariablesAsync();
-    const structuredTokens = {};
-    
-    for (const variable of localVariables) {
-      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
-      
-      if (!selectedCollectionIds.includes(collection.id)) {
-        continue;
-      }
-      
-      const tokenValues = {};
-      const hasMultipleModes = collection.modes.length > 1;
-      
-      for (const modeId of collection.modes.map(mode => mode.modeId)) {
-        const mode = collection.modes.find(m => m.modeId === modeId);
-        const value = variable.valuesByMode[modeId];
-        
-        if (value !== undefined) {
-          if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
-          } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
-          }
-        }
-      }
-      
-      const collectionName = collection.name;
-      const tokenPath = parseTokenPath(variable.name);
-      
-      if (!structuredTokens[collectionName]) {
-        structuredTokens[collectionName] = {};
-      }
-      
-      const tokenData = {
-        value: tokenValues[collection.modes[0].name] || null,
-        type: "other"
-      };
-      
-      if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
-        tokenData["$extensions"] = {
-          mode: tokenValues
-        };
-      }
-      
-      setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
-    }
-
-    // Create GitHub PR with comparison
-    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
-    
-    // Save current tokens as previous version for next comparison (only after successful PR creation)
-    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
-    
-  } catch (error) {
-    console.error('Erro ao exportar para GitHub:', error);
-    figma.ui.postMessage({ 
-      type: 'github-error', 
-      message: 'Erro ao exportar para GitHub: ' + error.message 
-    });
-  }
+  return structuredTokens;
 }
 
 async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
@@ -591,48 +487,40 @@ function getAllTokenPaths(data, prefix = '') {
   return tokens;
 }
 
-// Helper function to count tokens in a collection
-function countTokensInCollection(collection) {
-  let count = 0;
-  
-  function countRecursive(obj) {
-    for (const key in obj) {
-      if (obj[key] && typeof obj[key] === 'object') {
-        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
-          count++;
-        } else {
-          countRecursive(obj[key]);
-        }
-      }
+// Helper functions for token processing
+function formatTokenValue(value, type) {
+  if (type === 'COLOR') {
+    if (typeof value === 'object' && value.r !== undefined) {
+      const r = Math.round(value.r * 255);
+      const g = Math.round(value.g * 255);
+      const b = Math.round(value.b * 255);
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
     }
+  } else if (type === 'FLOAT') {
+    return `${value}px`;
+  } else if (type === 'STRING') {
+    return value;
   }
   
-  countRecursive(collection);
-  return count;
+  return value;
 }
 
-// Helper function to get a flat list of tokens from a collection
-function getTokenListFromCollection(collection, collectionName, prefix = '') {
-  const tokens = [];
+function parseTokenPath(tokenName) {
+  let path = tokenName.replace(/[\/-]/g, '.').split('.');
+  path = path.map(part => part.trim()).filter(part => part.length > 0);
+  return path;
+}
+
+function setNestedValue(obj, path, value) {
+  let current = obj;
   
-  function extractTokens(obj, currentPrefix) {
-    for (const key in obj) {
-      const fullKey = currentPrefix ? `${currentPrefix}.${key}` : key;
-      
-      if (obj[key] && typeof obj[key] === 'object') {
-        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
-          tokens.push({
-            name: fullKey,
-            value: obj[key].value,
-            type: obj[key].type
-          });
-        } else {
-          extractTokens(obj[key], fullKey);
-        }
-      }
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (!current[key]) {
+      current[key] = {};
     }
+    current = current[key];
   }
   
-  extractTokens(collection, prefix);
-  return tokens;
+  current[path[path.length - 1]] = value;
 }
