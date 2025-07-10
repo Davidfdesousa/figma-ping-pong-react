@@ -1,211 +1,122 @@
 /**
  * Figma Token Exporter Plugin - Main Entry Point
  * 
- * Minimal orchestrator for the Figma Token Exporter plugin.
- * All business logic is modularized in separate service files.
+ * Modular orchestrator for the Figma Token Exporter plugin.
+ * All business logic is separated into service modules.
  * 
- * @version 2.0.0
+ * @version 3.0.0
  */
 
 // ============================================================================
-// INLINE UTILITIES (Required for Figma environment)
+// INLINE SERVICE MODULES (Required for Figma environment)
 // ============================================================================
 
-/**
- * Base64 encoding for GitHub API
- */
-function stringToBase64(str) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let result = '';
-  let i = 0;
-  
-  while (i < str.length) {
-    const a = str.charCodeAt(i++);
-    const b = i < str.length ? str.charCodeAt(i++) : 0;
-    const c = i < str.length ? str.charCodeAt(i++) : 0;
+// Utils Service
+const UtilsService = (function() {
+  function stringToBase64(str) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    let i = 0;
     
-    const bitmap = (a << 16) | (b << 8) | c;
-    
-    result += chars.charAt((bitmap >> 18) & 63);
-    result += chars.charAt((bitmap >> 12) & 63);
-    result += chars.charAt((bitmap >> 6) & 63);
-    result += chars.charAt(bitmap & 63);
-  }
-  
-  const padding = str.length % 3;
-  if (padding === 1) {
-    result = result.slice(0, -2) + '==';
-  } else if (padding === 2) {
-    result = result.slice(0, -1) + '=';
-  }
-  
-  return result;
-}
-
-/**
- * Format token values based on type
- */
-function formatTokenValue(value, type) {
-  if (type === 'COLOR') {
-    if (typeof value === 'object' && value.r !== undefined) {
-      const r = Math.round(value.r * 255);
-      const g = Math.round(value.g * 255);
-      const b = Math.round(value.b * 255);
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+    while (i < str.length) {
+      const a = str.charCodeAt(i++);
+      const b = i < str.length ? str.charCodeAt(i++) : 0;
+      const c = i < str.length ? str.charCodeAt(i++) : 0;
+      
+      const bitmap = (a << 16) | (b << 8) | c;
+      
+      result += chars.charAt((bitmap >> 18) & 63);
+      result += chars.charAt((bitmap >> 12) & 63);
+      result += chars.charAt((bitmap >> 6) & 63);
+      result += chars.charAt(bitmap & 63);
     }
-  } else if (type === 'FLOAT') {
-    return `${value}px`;
-  } else if (type === 'STRING') {
+    
+    const padding = str.length % 3;
+    if (padding === 1) {
+      result = result.slice(0, -2) + '==';
+    } else if (padding === 2) {
+      result = result.slice(0, -1) + '=';
+    }
+    
+    return result;
+  }
+
+  function formatTokenValue(value, type) {
+    if (type === 'COLOR') {
+      if (typeof value === 'object' && value.r !== undefined) {
+        const r = Math.round(value.r * 255);
+        const g = Math.round(value.g * 255);
+        const b = Math.round(value.b * 255);
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+      }
+    } else if (type === 'FLOAT') {
+      return `${value}px`;
+    } else if (type === 'STRING') {
+      return value;
+    }
     return value;
   }
-  return value;
-}
 
-/**
- * Parse token path from name
- */
-function parseTokenPath(tokenName) {
-  let path = tokenName.replace(/[\/-]/g, '.').split('.');
-  path = path.map(part => part.trim()).filter(part => part.length > 0);
-  return path;
-}
+  function parseTokenPath(tokenName) {
+    let path = tokenName.replace(/[\/-]/g, '.').split('.');
+    path = path.map(part => part.trim()).filter(part => part.length > 0);
+    return path;
+  }
 
-/**
- * Set nested object value
- */
-function setNestedValue(obj, path, value) {
-  let current = obj;
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i];
-    if (!current[key]) {
-      current[key] = {};
+  function setNestedValue(obj, path, value) {
+    let current = obj;
+    for (let i = 0; i < path.length - 1; i++) {
+      const key = path[i];
+      if (!current[key]) {
+        current[key] = {};
+      }
+      current = current[key];
     }
-    current = current[key];
+    current[path[path.length - 1]] = value;
   }
-  current[path[path.length - 1]] = value;
-}
 
-// ============================================================================
-// INLINE SERVICE IMPLEMENTATIONS
-// ============================================================================
+  return { stringToBase64, formatTokenValue, parseTokenPath, setNestedValue };
+})();
 
-// Import services (inline for Figma compatibility)
-async function loadCollections() {
-  try {
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    const collectionsData = [];
-    
-    for (const collection of collections) {
-      const variableCount = collection.variableIds.length;
-      collectionsData.push({
-        id: collection.id,
-        name: collection.name,
-        variableCount: variableCount,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        }))
-      });
-    }
-    
-    figma.ui.postMessage({ 
-      type: 'collections-loaded', 
-      data: collectionsData 
-    });
-    
-  } catch (error) {
-    console.error('Error loading collections:', error);
-    figma.ui.postMessage({ 
-      type: 'load-error', 
-      message: 'Error loading collections: ' + error.message 
-    });
-  }
-}
-
-async function exportSelectedTokens(selectedCollectionIds) {
-  try {
-    const structuredTokens = await generateTokensData(selectedCollectionIds);
-    
-    figma.ui.postMessage({ 
-      type: 'tokens-exported', 
-      data: structuredTokens 
-    });
-    
-  } catch (error) {
-    console.error('Error exporting selected tokens:', error);
-    figma.ui.postMessage({ 
-      type: 'export-error', 
-      message: 'Error exporting selected tokens: ' + error.message 
-    });
-  }
-}
-
-/**
- * GitHub configuration management
- */
-async function loadGitHubConfig() {
-  try {
-    const config = await figma.clientStorage.getAsync('github-config');
-    figma.ui.postMessage({ 
-      type: 'github-config-loaded',
-      data: config || {}
-    });
-  } catch (error) {
-    console.error('Error loading GitHub configuration:', error);
-    figma.ui.postMessage({ 
-      type: 'github-config-loaded',
-      data: {}
-    });
-  }
-}
-
-async function saveGitHubConfig(config) {
-  try {
-    await figma.clientStorage.setAsync('github-config', config);
-    figma.ui.postMessage({ 
-      type: 'github-config-saved',
-      message: 'GitHub configuration saved successfully!'
-    });
-  } catch (error) {
-    console.error('Error saving GitHub configuration:', error);
-    figma.ui.postMessage({ 
-      type: 'github-error', 
-      message: 'Error saving configuration: ' + error.message 
-    });
-  }
-}
-
-/**
- * Export to GitHub with PR creation
- */
-async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
-  try {
-    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
-    const githubConfig = await figma.clientStorage.getAsync('github-config');
-    
-    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
+// Collections Service
+const CollectionsService = (function() {
+  async function loadCollections() {
+    try {
+      const collections = await figma.variables.getLocalVariableCollectionsAsync();
+      const collectionsData = [];
+      
+      for (const collection of collections) {
+        const variableCount = collection.variableIds.length;
+        collectionsData.push({
+          id: collection.id,
+          name: collection.name,
+          variableCount: variableCount,
+          modes: collection.modes.map(mode => ({
+            modeId: mode.modeId,
+            name: mode.name
+          }))
+        });
+      }
+      
       figma.ui.postMessage({ 
-        type: 'github-error', 
-        message: 'GitHub configuration not found. Please configure first.' 
+        type: 'collections-loaded', 
+        data: collectionsData 
       });
-      return;
+      
+    } catch (error) {
+      console.error('Error loading collections:', error);
+      figma.ui.postMessage({ 
+        type: 'load-error', 
+        message: 'Error loading collections: ' + error.message 
+      });
     }
-
-    const structuredTokens = await generateTokensData(selectedCollectionIds);
-    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
-    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
-    
-  } catch (error) {
-    console.error('Error exporting to GitHub:', error);
-    figma.ui.postMessage({ 
-      type: 'github-error', 
-      message: 'Error exporting to GitHub: ' + error.message 
-    });
   }
-}
 
-// Import core services
-const TokenService = (function() {
+  return { loadCollections };
+})();
+
+// Token Generation Service
+const TokenGenerationService = (function() {
   async function generateTokensData(selectedCollectionIds) {
     const localVariables = await figma.variables.getLocalVariablesAsync();
     const structuredTokens = {};
@@ -229,13 +140,13 @@ const TokenService = (function() {
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
             tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
+            tokenValues[mode.name] = UtilsService.formatTokenValue(value, variable.resolvedType);
           }
         }
       }
       
       const collectionName = collection.name;
-      const tokenPath = parseTokenPath(variable.name);
+      const tokenPath = UtilsService.parseTokenPath(variable.name);
       
       if (!structuredTokens[collectionName]) {
         structuredTokens[collectionName] = {};
@@ -252,15 +163,76 @@ const TokenService = (function() {
         };
       }
       
-      setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
+      UtilsService.setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
     
     return structuredTokens;
   }
-  
+
   return { generateTokensData };
 })();
 
+// Token Export Service
+const TokenExportService = (function() {
+  async function exportSelectedTokens(selectedCollectionIds) {
+    try {
+      const structuredTokens = await TokenGenerationService.generateTokensData(selectedCollectionIds);
+      
+      figma.ui.postMessage({ 
+        type: 'tokens-exported', 
+        data: structuredTokens 
+      });
+      
+    } catch (error) {
+      console.error('Error exporting selected tokens:', error);
+      figma.ui.postMessage({ 
+        type: 'export-error', 
+        message: 'Error exporting selected tokens: ' + error.message 
+      });
+    }
+  }
+
+  return { exportSelectedTokens };
+})();
+
+// GitHub Config Service
+const GitHubConfigService = (function() {
+  async function loadGitHubConfig() {
+    try {
+      const config = await figma.clientStorage.getAsync('github-config');
+      figma.ui.postMessage({ 
+        type: 'github-config-loaded',
+        data: config || {}
+      });
+    } catch (error) {
+      console.error('Error loading GitHub configuration:', error);
+      figma.ui.postMessage({ 
+        type: 'github-config-loaded',
+        data: {}
+      });
+    }
+  }
+
+  async function saveGitHubConfig(config) {
+    try {
+      await figma.clientStorage.setAsync('github-config', config);
+      figma.ui.postMessage({ 
+        type: 'github-config-saved',
+        message: 'GitHub configuration saved successfully!'
+      });
+    } catch (error) {
+      console.error('Error saving GitHub configuration:', error);
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'Error saving configuration: ' + error.message 
+      });
+    }
+  }
+
+  return { loadGitHubConfig, saveGitHubConfig };
+})();
+
+// Comparison Service
 const ComparisonService = (function() {
   function getAllTokenPaths(data, prefix = '') {
     const tokens = {};
@@ -321,6 +293,7 @@ const ComparisonService = (function() {
   return { compareTokens };
 })();
 
+// PR Service
 const PRService = (function() {
   function generatePRDescription(tokensData, commitDescription, prevData = {}) {
     const filePath = 'src/figma-output/selected-tokens.json';
@@ -370,13 +343,13 @@ const PRService = (function() {
   return { generatePRDescription };
 })();
 
-const GitHubService = (function() {
+// GitHub API Service
+const GitHubAPIService = (function() {
   async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
     const { token, repo, owner } = config;
     const apiBase = 'https://api.github.com';
     
     try {
-      // Get main branch SHA
       const branchResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/git/ref/heads/main`, {
         headers: {
           'Authorization': `token ${token}`,
@@ -391,7 +364,6 @@ const GitHubService = (function() {
       const branchData = await branchResponse.json();
       const mainSha = branchData.object.sha;
       
-      // Create new branch
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const branchName = `figma-tokens-update-${timestamp}`;
       
@@ -412,11 +384,9 @@ const GitHubService = (function() {
         throw new Error(`Error creating branch: ${createBranchResponse.statusText}`);
       }
       
-      // Create or update file
       const filePath = 'src/figma-output/selected-tokens.json';
-      const fileContent = stringToBase64(JSON.stringify(tokensData, null, 2));
+      const fileContent = UtilsService.stringToBase64(JSON.stringify(tokensData, null, 2));
       
-      // Check if file exists to get SHA
       let fileSha = null;
       try {
         const fileResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/contents/${filePath}?ref=${branchName}`, {
@@ -434,7 +404,6 @@ const GitHubService = (function() {
         // File doesn't exist, which is fine
       }
       
-      // Create/update file
       const commitMessage = commitDescription 
         ? commitDescription 
         : `Update Figma tokens - ${new Date().toLocaleString()}`;
@@ -463,7 +432,6 @@ const GitHubService = (function() {
         throw new Error(`Error updating file: ${updateFileResponse.statusText}`);
       }
       
-      // Create Pull Request with detailed changelog
       const prDescription = PRService.generatePRDescription(tokensData, commitDescription, prevData);
       
       const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
@@ -505,44 +473,82 @@ const GitHubService = (function() {
   return { createGitHubPR };
 })();
 
-// Use services
-const generateTokensData = TokenService.generateTokensData;
-const createGitHubPR = GitHubService.createGitHubPR;
+// GitHub Export Service
+const GitHubExportService = (function() {
+  async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
+    try {
+      const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+      const githubConfig = await figma.clientStorage.getAsync('github-config');
+      
+      if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
+        figma.ui.postMessage({ 
+          type: 'github-error', 
+          message: 'GitHub configuration not found. Please configure first.' 
+        });
+        return;
+      }
+
+      const structuredTokens = await TokenGenerationService.generateTokensData(selectedCollectionIds);
+      await GitHubAPIService.createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
+      await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
+      
+    } catch (error) {
+      console.error('Error exporting to GitHub:', error);
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'Error exporting to GitHub: ' + error.message 
+      });
+    }
+  }
+
+  return { exportToGitHub };
+})();
+
+// Message Handler Service
+const MessageHandlerService = (function() {
+  function handleMessage(msg) {
+    console.log('📨 Message received:', msg);
+    
+    switch (msg.type) {
+      case 'ping':
+        figma.ui.postMessage({ type: 'pong' });
+        break;
+        
+      case 'load-github-config':
+        GitHubConfigService.loadGitHubConfig();
+        break;
+        
+      case 'load-collections':
+        CollectionsService.loadCollections();
+        break;
+        
+      case 'export-selected-tokens':
+        TokenExportService.exportSelectedTokens(msg.selectedCollections);
+        break;
+        
+      case 'save-github-config':
+        GitHubConfigService.saveGitHubConfig(msg.config);
+        break;
+        
+      case 'export-to-github':
+        GitHubExportService.exportToGitHub(msg.selectedCollections, msg.commitDescription);
+        break;
+        
+      case 'close':
+        figma.closePlugin();
+        break;
+        
+      default:
+        console.warn('Unknown message type:', msg.type);
+    }
+  }
+
+  return { handleMessage };
+})();
 
 // ============================================================================
 // PLUGIN INITIALIZATION
 // ============================================================================
 
 figma.showUI(__html__, { width: 500, height: 800 });
-
-figma.ui.onmessage = (msg) => {
-  console.log('📨 Message received:', msg);
-  
-  if (msg.type === 'ping') {
-    figma.ui.postMessage({ type: 'pong' });
-  }
-  
-  if (msg.type === 'load-github-config') {
-    loadGitHubConfig();
-  }
-  
-  if (msg.type === 'load-collections') {
-    loadCollections();
-  }
-  
-  if (msg.type === 'export-selected-tokens') {
-    exportSelectedTokens(msg.selectedCollections);
-  }
-  
-  if (msg.type === 'save-github-config') {
-    saveGitHubConfig(msg.config);
-  }
-  
-  if (msg.type === 'export-to-github') {
-    exportToGitHub(msg.selectedCollections, msg.commitDescription);
-  }
-  
-  if (msg.type === 'close') {
-    figma.closePlugin();
-  }
-};
+figma.ui.onmessage = MessageHandlerService.handleMessage;
