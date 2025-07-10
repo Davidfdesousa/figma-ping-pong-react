@@ -1,7 +1,70 @@
-// This is the main plugin code that runs in the Figma environment
+// Main Figma Plugin Entry Point
+// Lightweight orchestrator that delegates to service modules
 
-// Import services
-// Note: In Figma plugin environment, we need to inline the imports
+// Import all utility functions (in Figma plugin environment, these are inlined)
+// Utils
+function stringToBase64(str) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  let i = 0;
+  
+  while (i < str.length) {
+    const a = str.charCodeAt(i++);
+    const b = i < str.length ? str.charCodeAt(i++) : 0;
+    const c = i < str.length ? str.charCodeAt(i++) : 0;
+    
+    const bitmap = (a << 16) | (b << 8) | c;
+    
+    result += chars.charAt((bitmap >> 18) & 63);
+    result += chars.charAt((bitmap >> 12) & 63);
+    result += chars.charAt((bitmap >> 6) & 63);
+    result += chars.charAt(bitmap & 63);
+  }
+  
+  const padding = str.length % 3;
+  if (padding === 1) {
+    result = result.slice(0, -2) + '==';
+  } else if (padding === 2) {
+    result = result.slice(0, -1) + '=';
+  }
+  
+  return result;
+}
+
+function formatTokenValue(value, type) {
+  if (type === 'COLOR') {
+    if (typeof value === 'object' && value.r !== undefined) {
+      const r = Math.round(value.r * 255);
+      const g = Math.round(value.g * 255);
+      const b = Math.round(value.b * 255);
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+    }
+  } else if (type === 'FLOAT') {
+    return `${value}px`;
+  } else if (type === 'STRING') {
+    return value;
+  }
+  return value;
+}
+
+function parseTokenPath(tokenName) {
+  let path = tokenName.replace(/[\/-]/g, '.').split('.');
+  path = path.map(part => part.trim()).filter(part => part.length > 0);
+  return path;
+}
+
+function setNestedValue(obj, path, value) {
+  let current = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (!current[key]) {
+      current[key] = {};
+    }
+    current = current[key];
+  }
+  current[path[path.length - 1]] = value;
+}
+
 // Token Service functions
 async function loadCollections() {
   try {
@@ -112,37 +175,9 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   }
 }
 
-// Helper functions
-function stringToBase64(str) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let result = '';
-  let i = 0;
-  
-  while (i < str.length) {
-    const a = str.charCodeAt(i++);
-    const b = i < str.length ? str.charCodeAt(i++) : 0;
-    const c = i < str.length ? str.charCodeAt(i++) : 0;
-    
-    const bitmap = (a << 16) | (b << 8) | c;
-    
-    result += chars.charAt((bitmap >> 18) & 63);
-    result += chars.charAt((bitmap >> 12) & 63);
-    result += chars.charAt((bitmap >> 6) & 63);
-    result += chars.charAt(bitmap & 63);
-  }
-  
-  const padding = str.length % 3;
-  if (padding === 1) {
-    result = result.slice(0, -2) + '==';
-  } else if (padding === 2) {
-    result = result.slice(0, -1) + '=';
-  }
-  
-  return result;
-}
-
 figma.showUI(__html__, { width: 500, height: 800 });
 
+// Message handling
 figma.ui.onmessage = (msg) => {
   console.log('Received message in code.js:', msg);
   
@@ -363,7 +398,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
   }
 }
 
-// Function to generate PR description with detailed changelog
+// PR Description Generation Service
 async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;
@@ -376,7 +411,6 @@ async function generatePRDescription(tokensData, commitDescription, prevData = {
   description += `- Arquivo atualizado: \`${filePath}\`\n`;
   description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
   
-  // Compare with previous version
   const changes = compareTokens(prevData, tokensData);
   
   if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
@@ -407,51 +441,33 @@ async function generatePRDescription(tokensData, commitDescription, prevData = {
   }
   
   description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
-  
   return description;
 }
 
-// Function to compare tokens and find differences
+// Token Comparison Service
 function compareTokens(prevData, newData) {
-  const changes = {
-    added: [],
-    modified: [],
-    removed: []
-  };
-  
-  // Get all token paths from both datasets
+  const changes = { added: [], modified: [], removed: [] };
   const prevTokens = getAllTokenPaths(prevData);
   const newTokens = getAllTokenPaths(newData);
-  
   const prevPaths = Object.keys(prevTokens);
   const newPaths = Object.keys(newTokens);
   
-  // Find added tokens
   newPaths.forEach(path => {
     if (!prevPaths.includes(path)) {
-      changes.added.push({
-        path: path,
-        value: newTokens[path]
-      });
+      changes.added.push({ path: path, value: newTokens[path] });
     }
   });
   
-  // Find removed tokens
   prevPaths.forEach(path => {
     if (!newPaths.includes(path)) {
-      changes.removed.push({
-        path: path,
-        value: prevTokens[path]
-      });
+      changes.removed.push({ path: path, value: prevTokens[path] });
     }
   });
   
-  // Find modified tokens
   newPaths.forEach(path => {
     if (prevPaths.includes(path)) {
       const prevValue = String(prevTokens[path]).trim();
       const newValue = String(newTokens[path]).trim();
-      
       if (prevValue !== newValue) {
         changes.modified.push({
           path: path,
@@ -465,14 +481,12 @@ function compareTokens(prevData, newData) {
   return changes;
 }
 
-// Helper function to get all token paths with their values
 function getAllTokenPaths(data, prefix = '') {
   const tokens = {};
   
   function extractPaths(obj, currentPrefix) {
     for (const key in obj) {
       const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
-      
       if (obj[key] && typeof obj[key] === 'object') {
         if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
           tokens[fullPath] = obj[key].value;
@@ -485,42 +499,4 @@ function getAllTokenPaths(data, prefix = '') {
   
   extractPaths(data, prefix);
   return tokens;
-}
-
-// Helper functions for token processing
-function formatTokenValue(value, type) {
-  if (type === 'COLOR') {
-    if (typeof value === 'object' && value.r !== undefined) {
-      const r = Math.round(value.r * 255);
-      const g = Math.round(value.g * 255);
-      const b = Math.round(value.b * 255);
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
-    }
-  } else if (type === 'FLOAT') {
-    return `${value}px`;
-  } else if (type === 'STRING') {
-    return value;
-  }
-  
-  return value;
-}
-
-function parseTokenPath(tokenName) {
-  let path = tokenName.replace(/[\/-]/g, '.').split('.');
-  path = path.map(part => part.trim()).filter(part => part.length > 0);
-  return path;
-}
-
-function setNestedValue(obj, path, value) {
-  let current = obj;
-  
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i];
-    if (!current[key]) {
-      current[key] = {};
-    }
-    current = current[key];
-  }
-  
-  current[path[path.length - 1]] = value;
 }
