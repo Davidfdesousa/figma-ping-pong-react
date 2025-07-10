@@ -7,7 +7,7 @@
           "type": "other"
         },
         "200": {
-          "value": "#C5C5C5",
+          "value": "#CCCCCC",
           "type": "other"
         },
         "900": {
@@ -17,15 +17,15 @@
       },
       "green": {
         "200": {
-          "value": "#38FF56",
+          "value": "#46F360",
           "type": "other"
         },
         "500": {
-          "value": "#008915",
+          "value": "#05A11C",
           "type": "other"
         },
         "800": {
-          "value": "#004715",
+          "value": "#01561B",
           "type": "other"
         }
       },
