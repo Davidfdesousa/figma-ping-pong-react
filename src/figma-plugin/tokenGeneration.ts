@@ -1,6 +1,6 @@
 // tokenGeneration.ts
 import { define } from './ModuleLoader';
-import { Utils } from './utils';
+import { Utils } from './utils/utils';
 
 /** Estrutura interna de variável Figma usada pelo módulo. */
 interface FigmaVariable {

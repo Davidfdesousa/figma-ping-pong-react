@@ -1,6 +1,6 @@
 // index.ts
 import './ModuleLoader';
-import './utils';
+import './utils/utils';
 import './collections';
 import './tokenGeneration';
 import './comparison';

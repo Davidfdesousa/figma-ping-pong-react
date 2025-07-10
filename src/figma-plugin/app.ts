@@ -2,14 +2,14 @@
 declare const __html__: string;
 
 import { define, require } from './ModuleLoader';
-import { Utils } from './utils';
+import { Utils } from './utils/utils';
 
 // registra os outros módulos antes de usar
 import './collections';
 import './tokenGeneration';
 import './comparison';
 import './githubConfig';
-import './utils';
+import './utils/utils';
 
 /**
  * Main App Module
