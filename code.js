@@ -7,10 +7,10 @@
  */
 
 // ============================================================================
-// INLINE UTILITIES (Required for Figma environment)
+// INLINE SERVICE MODULES (Required for Figma environment)
 // ============================================================================
 
-// Base64 encoding for GitHub API
+// Utils Service - Base utilities
 function stringToBase64(str) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
@@ -39,7 +39,6 @@ function stringToBase64(str) {
   return result;
 }
 
-// Token value formatting
 function formatTokenValue(value, type) {
   if (type === 'COLOR') {
     if (typeof value === 'object' && value.r !== undefined) {
@@ -56,14 +55,12 @@ function formatTokenValue(value, type) {
   return value;
 }
 
-// Token path parsing
 function parseTokenPath(tokenName) {
   let path = tokenName.replace(/[\/-]/g, '.').split('.');
   path = path.map(part => part.trim()).filter(part => part.length > 0);
   return path;
 }
 
-// Nested value setting
 function setNestedValue(obj, path, value) {
   let current = obj;
   for (let i = 0; i < path.length - 1; i++) {
@@ -76,63 +73,7 @@ function setNestedValue(obj, path, value) {
   current[path[path.length - 1]] = value;
 }
 
-// ============================================================================
-// INLINE SERVICE FUNCTIONS
-// ============================================================================
-
-// Load Figma collections
-async function loadCollections() {
-  try {
-    const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    const collectionsData = [];
-    
-    for (const collection of collections) {
-      const variableCount = collection.variableIds.length;
-      collectionsData.push({
-        id: collection.id,
-        name: collection.name,
-        variableCount: variableCount,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        }))
-      });
-    }
-    
-    figma.ui.postMessage({ 
-      type: 'collections-loaded', 
-      data: collectionsData 
-    });
-    
-  } catch (error) {
-    console.error('Error loading collections:', error);
-    figma.ui.postMessage({ 
-      type: 'load-error', 
-      message: 'Error loading collections: ' + error.message 
-    });
-  }
-}
-
-// Export selected tokens
-async function exportSelectedTokens(selectedCollectionIds) {
-  try {
-    const structuredTokens = await generateTokensData(selectedCollectionIds);
-    
-    figma.ui.postMessage({ 
-      type: 'tokens-exported', 
-      data: structuredTokens 
-    });
-    
-  } catch (error) {
-    console.error('Error exporting selected tokens:', error);
-    figma.ui.postMessage({ 
-      type: 'export-error', 
-      message: 'Error exporting selected tokens: ' + error.message 
-    });
-  }
-}
-
-// Generate tokens data
+// Token Service - Core token processing
 async function generateTokensData(selectedCollectionIds) {
   const localVariables = await figma.variables.getLocalVariablesAsync();
   const structuredTokens = {};
@@ -185,7 +126,163 @@ async function generateTokensData(selectedCollectionIds) {
   return structuredTokens;
 }
 
-// Load GitHub config
+// Comparison Service - Change detection
+function getAllTokenPaths(data, prefix = '') {
+  const tokens = {};
+  
+  function extractPaths(obj, currentPrefix) {
+    for (const key in obj) {
+      const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
+      if (obj[key] && typeof obj[key] === 'object') {
+        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
+          tokens[fullPath] = obj[key].value;
+        } else {
+          extractPaths(obj[key], fullPath);
+        }
+      }
+    }
+  }
+  
+  extractPaths(data, prefix);
+  return tokens;
+}
+
+function compareTokens(prevData, newData) {
+  const changes = { added: [], modified: [], removed: [] };
+  const prevTokens = getAllTokenPaths(prevData);
+  const newTokens = getAllTokenPaths(newData);
+  const prevPaths = Object.keys(prevTokens);
+  const newPaths = Object.keys(newTokens);
+  
+  newPaths.forEach(path => {
+    if (!prevPaths.includes(path)) {
+      changes.added.push({ path: path, value: newTokens[path] });
+    }
+  });
+  
+  prevPaths.forEach(path => {
+    if (!newPaths.includes(path)) {
+      changes.removed.push({ path: path, value: prevTokens[path] });
+    }
+  });
+  
+  newPaths.forEach(path => {
+    if (prevPaths.includes(path)) {
+      const prevValue = String(prevTokens[path]).trim();
+      const newValue = String(newTokens[path]).trim();
+      if (prevValue !== newValue) {
+        changes.modified.push({
+          path: path,
+          oldValue: prevValue,
+          newValue: newValue
+        });
+      }
+    }
+  });
+  
+  return changes;
+}
+
+// PR Service - Description generation
+function generatePRDescription(tokensData, commitDescription, prevData = {}) {
+  const filePath = 'src/figma-output/selected-tokens.json';
+  let description = `## 🎨 Figma Design Tokens Update\n\n`;
+  
+  if (commitDescription) {
+    description += `### Alterações:\n${commitDescription}\n\n`;
+  }
+  
+  description += `### Detalhes da Atualização:\n`;
+  description += `- Arquivo atualizado: \`${filePath}\`\n`;
+  description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
+  
+  const changes = compareTokens(prevData, tokensData);
+  
+  if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
+    description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
+  } else {
+    description += `### Resumo das Alterações:\n`;
+    
+    if (changes.added.length > 0) {
+      description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
+      changes.added.forEach((token) => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
+      });
+    }
+    
+    if (changes.modified.length > 0) {
+      description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
+      changes.modified.forEach((token) => {
+        description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
+      });
+    }
+    
+    if (changes.removed.length > 0) {
+      description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
+      changes.removed.forEach((token) => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
+      });
+    }
+  }
+  
+  description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
+  return description;
+}
+
+// ============================================================================
+// MAIN SERVICE FUNCTIONS
+// ============================================================================
+
+async function loadCollections() {
+  try {
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const collectionsData = [];
+    
+    for (const collection of collections) {
+      const variableCount = collection.variableIds.length;
+      collectionsData.push({
+        id: collection.id,
+        name: collection.name,
+        variableCount: variableCount,
+        modes: collection.modes.map(mode => ({
+          modeId: mode.modeId,
+          name: mode.name
+        }))
+      });
+    }
+    
+    figma.ui.postMessage({ 
+      type: 'collections-loaded', 
+      data: collectionsData 
+    });
+    
+  } catch (error) {
+    console.error('Error loading collections:', error);
+    figma.ui.postMessage({ 
+      type: 'load-error', 
+      message: 'Error loading collections: ' + error.message 
+    });
+  }
+}
+
+async function exportSelectedTokens(selectedCollectionIds) {
+  try {
+    const structuredTokens = await generateTokensData(selectedCollectionIds);
+    
+    figma.ui.postMessage({ 
+      type: 'tokens-exported', 
+      data: structuredTokens 
+    });
+    
+  } catch (error) {
+    console.error('Error exporting selected tokens:', error);
+    figma.ui.postMessage({ 
+      type: 'export-error', 
+      message: 'Error exporting selected tokens: ' + error.message 
+    });
+  }
+}
+
 async function loadGitHubConfig() {
   try {
     const config = await figma.clientStorage.getAsync('github-config');
@@ -202,7 +299,6 @@ async function loadGitHubConfig() {
   }
 }
 
-// Save GitHub config
 async function saveGitHubConfig(config) {
   try {
     await figma.clientStorage.setAsync('github-config', config);
@@ -219,7 +315,6 @@ async function saveGitHubConfig(config) {
   }
 }
 
-// Export to GitHub
 async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   try {
     const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
@@ -246,7 +341,6 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   }
 }
 
-// Create GitHub PR
 async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
   const { token, repo, owner } = config;
   const apiBase = 'https://api.github.com';
@@ -376,110 +470,6 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
       message: 'GitHub API error: ' + error.message 
     });
   }
-}
-
-// Generate PR description with changelog
-function generatePRDescription(tokensData, commitDescription, prevData = {}) {
-  const filePath = 'src/figma-output/selected-tokens.json';
-  let description = `## 🎨 Figma Design Tokens Update\n\n`;
-  
-  if (commitDescription) {
-    description += `### Alterações:\n${commitDescription}\n\n`;
-  }
-  
-  description += `### Detalhes da Atualização:\n`;
-  description += `- Arquivo atualizado: \`${filePath}\`\n`;
-  description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
-  
-  const changes = compareTokens(prevData, tokensData);
-  
-  if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
-    description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
-  } else {
-    description += `### Resumo das Alterações:\n`;
-    
-    if (changes.added.length > 0) {
-      description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
-      changes.added.forEach((token) => {
-        description += `- \`${token.path}\`: ${token.value}\n`;
-      });
-    }
-    
-    if (changes.modified.length > 0) {
-      description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
-      changes.modified.forEach((token) => {
-        description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
-      });
-    }
-    
-    if (changes.removed.length > 0) {
-      description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
-      changes.removed.forEach((token) => {
-        description += `- \`${token.path}\`: ${token.value}\n`;
-      });
-    }
-  }
-  
-  description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
-  return description;
-}
-
-// Compare tokens for changelog
-function compareTokens(prevData, newData) {
-  const changes = { added: [], modified: [], removed: [] };
-  const prevTokens = getAllTokenPaths(prevData);
-  const newTokens = getAllTokenPaths(newData);
-  const prevPaths = Object.keys(prevTokens);
-  const newPaths = Object.keys(newTokens);
-  
-  newPaths.forEach(path => {
-    if (!prevPaths.includes(path)) {
-      changes.added.push({ path: path, value: newTokens[path] });
-    }
-  });
-  
-  prevPaths.forEach(path => {
-    if (!newPaths.includes(path)) {
-      changes.removed.push({ path: path, value: prevTokens[path] });
-    }
-  });
-  
-  newPaths.forEach(path => {
-    if (prevPaths.includes(path)) {
-      const prevValue = String(prevTokens[path]).trim();
-      const newValue = String(newTokens[path]).trim();
-      if (prevValue !== newValue) {
-        changes.modified.push({
-          path: path,
-          oldValue: prevValue,
-          newValue: newValue
-        });
-      }
-    }
-  });
-  
-  return changes;
-}
-
-// Extract token paths for comparison
-function getAllTokenPaths(data, prefix = '') {
-  const tokens = {};
-  
-  function extractPaths(obj, currentPrefix) {
-    for (const key in obj) {
-      const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
-      if (obj[key] && typeof obj[key] === 'object') {
-        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
-          tokens[fullPath] = obj[key].value;
-        } else {
-          extractPaths(obj[key], fullPath);
-        }
-      }
-    }
-  }
-  
-  extractPaths(data, prefix);
-  return tokens;
 }
 
 // ============================================================================
