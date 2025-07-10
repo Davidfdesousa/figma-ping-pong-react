@@ -17,7 +17,7 @@
       },
       "green": {
         "200": {
-          "value": "#37F254",
+          "value": "#2BE748",
           "type": "other"
         },
         "500": {
@@ -35,7 +35,7 @@
           "type": "other"
         },
         "500": {
-          "value": "#0B0FE9",
+          "value": "#1C20E7",
           "type": "other"
         },
         "800": {
@@ -45,7 +45,7 @@
       },
       "violet": {
         "200": {
-          "value": "#A231F9",
+          "value": "#A13EEC",
           "type": "other"
         },
         "500": {
