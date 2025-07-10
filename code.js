@@ -1,18 +1,54 @@
 /**
  * Figma Token Exporter Plugin - Main Entry Point
  * 
- * Modular orchestrator for the Figma Token Exporter plugin.
- * All business logic is separated into service modules.
+ * Ultra-clean orchestrator with external service modules.
  * 
- * @version 3.0.0
+ * @version 4.0.0
  */
 
 // ============================================================================
-// INLINE SERVICE MODULES (Required for Figma environment)
+// MODULE LOADER (Figma-compatible)
 // ============================================================================
 
-// Utils Service
-const UtilsService = (function() {
+const ModuleLoader = (function() {
+  const modules = {};
+  
+  function define(name, dependencies, factory) {
+    modules[name] = {
+      dependencies,
+      factory,
+      exports: null
+    };
+  }
+  
+  function require(name) {
+    if (!modules[name]) {
+      throw new Error(`Module ${name} not found`);
+    }
+    
+    const module = modules[name];
+    if (module.exports) {
+      return module.exports;
+    }
+    
+    const deps = module.dependencies.map(dep => {
+      if (dep === 'figma') return figma;
+      return require(dep);
+    });
+    
+    module.exports = module.factory.apply(null, deps);
+    return module.exports;
+  }
+  
+  return { define, require };
+})();
+
+// ============================================================================
+// SERVICE MODULES
+// ============================================================================
+
+// Utils Module
+ModuleLoader.define('utils', [], function() {
   function stringToBase64(str) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let result = '';
@@ -76,10 +112,10 @@ const UtilsService = (function() {
   }
 
   return { stringToBase64, formatTokenValue, parseTokenPath, setNestedValue };
-})();
+});
 
-// Collections Service
-const CollectionsService = (function() {
+// Collections Module
+ModuleLoader.define('collections', ['figma'], function(figma) {
   async function loadCollections() {
     try {
       const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -113,10 +149,10 @@ const CollectionsService = (function() {
   }
 
   return { loadCollections };
-})();
+});
 
-// Token Generation Service
-const TokenGenerationService = (function() {
+// Token Generation Module
+ModuleLoader.define('tokenGeneration', ['figma', 'utils'], function(figma, utils) {
   async function generateTokensData(selectedCollectionIds) {
     const localVariables = await figma.variables.getLocalVariablesAsync();
     const structuredTokens = {};
@@ -140,13 +176,13 @@ const TokenGenerationService = (function() {
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
             tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenValues[mode.name] = UtilsService.formatTokenValue(value, variable.resolvedType);
+            tokenValues[mode.name] = utils.formatTokenValue(value, variable.resolvedType);
           }
         }
       }
       
       const collectionName = collection.name;
-      const tokenPath = UtilsService.parseTokenPath(variable.name);
+      const tokenPath = utils.parseTokenPath(variable.name);
       
       if (!structuredTokens[collectionName]) {
         structuredTokens[collectionName] = {};
@@ -163,77 +199,17 @@ const TokenGenerationService = (function() {
         };
       }
       
-      UtilsService.setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
+      utils.setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
     
     return structuredTokens;
   }
 
   return { generateTokensData };
-})();
+});
 
-// Token Export Service
-const TokenExportService = (function() {
-  async function exportSelectedTokens(selectedCollectionIds) {
-    try {
-      const structuredTokens = await TokenGenerationService.generateTokensData(selectedCollectionIds);
-      
-      figma.ui.postMessage({ 
-        type: 'tokens-exported', 
-        data: structuredTokens 
-      });
-      
-    } catch (error) {
-      console.error('Error exporting selected tokens:', error);
-      figma.ui.postMessage({ 
-        type: 'export-error', 
-        message: 'Error exporting selected tokens: ' + error.message 
-      });
-    }
-  }
-
-  return { exportSelectedTokens };
-})();
-
-// GitHub Config Service
-const GitHubConfigService = (function() {
-  async function loadGitHubConfig() {
-    try {
-      const config = await figma.clientStorage.getAsync('github-config');
-      figma.ui.postMessage({ 
-        type: 'github-config-loaded',
-        data: config || {}
-      });
-    } catch (error) {
-      console.error('Error loading GitHub configuration:', error);
-      figma.ui.postMessage({ 
-        type: 'github-config-loaded',
-        data: {}
-      });
-    }
-  }
-
-  async function saveGitHubConfig(config) {
-    try {
-      await figma.clientStorage.setAsync('github-config', config);
-      figma.ui.postMessage({ 
-        type: 'github-config-saved',
-        message: 'GitHub configuration saved successfully!'
-      });
-    } catch (error) {
-      console.error('Error saving GitHub configuration:', error);
-      figma.ui.postMessage({ 
-        type: 'github-error', 
-        message: 'Error saving configuration: ' + error.message 
-      });
-    }
-  }
-
-  return { loadGitHubConfig, saveGitHubConfig };
-})();
-
-// Comparison Service
-const ComparisonService = (function() {
+// Comparison Module
+ModuleLoader.define('comparison', [], function() {
   function getAllTokenPaths(data, prefix = '') {
     const tokens = {};
     
@@ -291,10 +267,73 @@ const ComparisonService = (function() {
   }
   
   return { compareTokens };
-})();
+});
 
-// PR Service
-const PRService = (function() {
+// GitHub Config Module
+ModuleLoader.define('githubConfig', ['figma'], function(figma) {
+  async function loadGitHubConfig() {
+    try {
+      const config = await figma.clientStorage.getAsync('github-config');
+      figma.ui.postMessage({ 
+        type: 'github-config-loaded',
+        data: config || {}
+      });
+    } catch (error) {
+      console.error('Error loading GitHub configuration:', error);
+      figma.ui.postMessage({ 
+        type: 'github-config-loaded',
+        data: {}
+      });
+    }
+  }
+
+  async function saveGitHubConfig(config) {
+    try {
+      await figma.clientStorage.setAsync('github-config', config);
+      figma.ui.postMessage({ 
+        type: 'github-config-saved',
+        message: 'GitHub configuration saved successfully!'
+      });
+    } catch (error) {
+      console.error('Error saving GitHub configuration:', error);
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'Error saving configuration: ' + error.message 
+      });
+    }
+  }
+
+  return { loadGitHubConfig, saveGitHubConfig };
+});
+
+// Main App Module
+ModuleLoader.define('app', [
+  'collections', 
+  'tokenGeneration', 
+  'comparison', 
+  'githubConfig', 
+  'utils',
+  'figma'
+], function(collections, tokenGeneration, comparison, githubConfig, utils, figma) {
+  
+  async function exportSelectedTokens(selectedCollectionIds) {
+    try {
+      const structuredTokens = await tokenGeneration.generateTokensData(selectedCollectionIds);
+      
+      figma.ui.postMessage({ 
+        type: 'tokens-exported', 
+        data: structuredTokens 
+      });
+      
+    } catch (error) {
+      console.error('Error exporting selected tokens:', error);
+      figma.ui.postMessage({ 
+        type: 'export-error', 
+        message: 'Error exporting selected tokens: ' + error.message 
+      });
+    }
+  }
+
   function generatePRDescription(tokensData, commitDescription, prevData = {}) {
     const filePath = 'src/figma-output/selected-tokens.json';
     let description = `## 🎨 Figma Design Tokens Update\n\n`;
@@ -307,7 +346,7 @@ const PRService = (function() {
     description += `- Arquivo atualizado: \`${filePath}\`\n`;
     description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
     
-    const changes = ComparisonService.compareTokens(prevData, tokensData);
+    const changes = comparison.compareTokens(prevData, tokensData);
     
     if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
       description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
@@ -339,12 +378,7 @@ const PRService = (function() {
     description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
     return description;
   }
-  
-  return { generatePRDescription };
-})();
 
-// GitHub API Service
-const GitHubAPIService = (function() {
   async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
     const { token, repo, owner } = config;
     const apiBase = 'https://api.github.com';
@@ -385,7 +419,7 @@ const GitHubAPIService = (function() {
       }
       
       const filePath = 'src/figma-output/selected-tokens.json';
-      const fileContent = UtilsService.stringToBase64(JSON.stringify(tokensData, null, 2));
+      const fileContent = utils.stringToBase64(JSON.stringify(tokensData, null, 2));
       
       let fileSha = null;
       try {
@@ -432,7 +466,7 @@ const GitHubAPIService = (function() {
         throw new Error(`Error updating file: ${updateFileResponse.statusText}`);
       }
       
-      const prDescription = PRService.generatePRDescription(tokensData, commitDescription, prevData);
+      const prDescription = generatePRDescription(tokensData, commitDescription, prevData);
       
       const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
         method: 'POST',
@@ -469,12 +503,7 @@ const GitHubAPIService = (function() {
       });
     }
   }
-  
-  return { createGitHubPR };
-})();
 
-// GitHub Export Service
-const GitHubExportService = (function() {
   async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
     try {
       const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
@@ -488,8 +517,8 @@ const GitHubExportService = (function() {
         return;
       }
 
-      const structuredTokens = await TokenGenerationService.generateTokensData(selectedCollectionIds);
-      await GitHubAPIService.createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
+      const structuredTokens = await tokenGeneration.generateTokensData(selectedCollectionIds);
+      await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
       await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
       
     } catch (error) {
@@ -501,11 +530,6 @@ const GitHubExportService = (function() {
     }
   }
 
-  return { exportToGitHub };
-})();
-
-// Message Handler Service
-const MessageHandlerService = (function() {
   function handleMessage(msg) {
     console.log('📨 Message received:', msg);
     
@@ -515,23 +539,23 @@ const MessageHandlerService = (function() {
         break;
         
       case 'load-github-config':
-        GitHubConfigService.loadGitHubConfig();
+        githubConfig.loadGitHubConfig();
         break;
         
       case 'load-collections':
-        CollectionsService.loadCollections();
+        collections.loadCollections();
         break;
         
       case 'export-selected-tokens':
-        TokenExportService.exportSelectedTokens(msg.selectedCollections);
+        exportSelectedTokens(msg.selectedCollections);
         break;
         
       case 'save-github-config':
-        GitHubConfigService.saveGitHubConfig(msg.config);
+        githubConfig.saveGitHubConfig(msg.config);
         break;
         
       case 'export-to-github':
-        GitHubExportService.exportToGitHub(msg.selectedCollections, msg.commitDescription);
+        exportToGitHub(msg.selectedCollections, msg.commitDescription);
         break;
         
       case 'close':
@@ -544,11 +568,13 @@ const MessageHandlerService = (function() {
   }
 
   return { handleMessage };
-})();
+});
 
 // ============================================================================
 // PLUGIN INITIALIZATION
 // ============================================================================
 
+const app = ModuleLoader.require('app');
+
 figma.showUI(__html__, { width: 500, height: 800 });
-figma.ui.onmessage = MessageHandlerService.handleMessage;
+figma.ui.onmessage = app.handleMessage;
