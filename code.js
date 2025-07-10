@@ -1,26 +1,16 @@
 /**
  * Figma Token Exporter Plugin - Main Entry Point
  * 
- * This is the main Figma plugin file that orchestrates all token export operations.
- * It acts as a lightweight coordinator that delegates functionality to specialized service modules.
- * 
- * The plugin supports:
- * - Loading and exporting Figma design tokens from variable collections
- * - Integrating with GitHub to create automated pull requests
- * - Comparing token changes between versions
- * - Generating detailed change logs for token updates
+ * Lightweight orchestrator that delegates to service modules
  * 
  * @version 1.0.0
- * @author Figma Token Exporter Team
  */
 
 // ============================================================================
-// UTILITY FUNCTIONS
+// INLINE UTILITIES (Required for Figma environment)
 // ============================================================================
 
-/**
- * Converts a string to Base64 encoding for GitHub API compatibility
- */
+// Base64 encoding for GitHub API
 function stringToBase64(str) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
@@ -49,9 +39,7 @@ function stringToBase64(str) {
   return result;
 }
 
-/**
- * Formats token values according to their data type
- */
+// Token value formatting
 function formatTokenValue(value, type) {
   if (type === 'COLOR') {
     if (typeof value === 'object' && value.r !== undefined) {
@@ -68,18 +56,14 @@ function formatTokenValue(value, type) {
   return value;
 }
 
-/**
- * Parses a token name into a structured path array
- */
+// Token path parsing
 function parseTokenPath(tokenName) {
   let path = tokenName.replace(/[\/-]/g, '.').split('.');
   path = path.map(part => part.trim()).filter(part => part.length > 0);
   return path;
 }
 
-/**
- * Sets a nested object value using a path array
- */
+// Nested value setting
 function setNestedValue(obj, path, value) {
   let current = obj;
   for (let i = 0; i < path.length - 1; i++) {
@@ -93,12 +77,10 @@ function setNestedValue(obj, path, value) {
 }
 
 // ============================================================================
-// FIGMA API FUNCTIONS
+// INLINE SERVICE FUNCTIONS
 // ============================================================================
 
-/**
- * Loads all variable collections from the current Figma file
- */
+// Load Figma collections
 async function loadCollections() {
   try {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -131,9 +113,7 @@ async function loadCollections() {
   }
 }
 
-/**
- * Exports tokens from selected collections
- */
+// Export selected tokens
 async function exportSelectedTokens(selectedCollectionIds) {
   try {
     const structuredTokens = await generateTokensData(selectedCollectionIds);
@@ -152,9 +132,7 @@ async function exportSelectedTokens(selectedCollectionIds) {
   }
 }
 
-/**
- * Generates structured token data from selected collections
- */
+// Generate tokens data
 async function generateTokensData(selectedCollectionIds) {
   const localVariables = await figma.variables.getLocalVariablesAsync();
   const structuredTokens = {};
@@ -207,13 +185,7 @@ async function generateTokensData(selectedCollectionIds) {
   return structuredTokens;
 }
 
-// ============================================================================
-// GITHUB FUNCTIONS
-// ============================================================================
-
-/**
- * Loads GitHub configuration from Figma's client storage
- */
+// Load GitHub config
 async function loadGitHubConfig() {
   try {
     const config = await figma.clientStorage.getAsync('github-config');
@@ -230,9 +202,7 @@ async function loadGitHubConfig() {
   }
 }
 
-/**
- * Saves GitHub configuration to Figma's client storage
- */
+// Save GitHub config
 async function saveGitHubConfig(config) {
   try {
     await figma.clientStorage.setAsync('github-config', config);
@@ -249,9 +219,7 @@ async function saveGitHubConfig(config) {
   }
 }
 
-/**
- * Exports design tokens to GitHub repository via automated pull request
- */
+// Export to GitHub
 async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   try {
     const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
@@ -278,9 +246,7 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   }
 }
 
-/**
- * Creates a GitHub pull request with token updates
- */
+// Create GitHub PR
 async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
   const { token, repo, owner } = config;
   const apiBase = 'https://api.github.com';
@@ -374,7 +340,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
     }
     
     // Create Pull Request with detailed changelog
-    const prDescription = await generatePRDescription(tokensData, commitDescription, prevData);
+    const prDescription = generatePRDescription(tokensData, commitDescription, prevData);
     
     const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
@@ -412,14 +378,8 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
   }
 }
 
-// ============================================================================
-// COMPARISON AND PR GENERATION FUNCTIONS
-// ============================================================================
-
-/**
- * Generates a comprehensive pull request description with detailed changelog
- */
-async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
+// Generate PR description with changelog
+function generatePRDescription(tokensData, commitDescription, prevData = {}) {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;
   
@@ -464,9 +424,7 @@ async function generatePRDescription(tokensData, commitDescription, prevData = {
   return description;
 }
 
-/**
- * Compares two token datasets and identifies all changes
- */
+// Compare tokens for changelog
 function compareTokens(prevData, newData) {
   const changes = { added: [], modified: [], removed: [] };
   const prevTokens = getAllTokenPaths(prevData);
@@ -503,9 +461,7 @@ function compareTokens(prevData, newData) {
   return changes;
 }
 
-/**
- * Extracts all token paths from a nested data structure
- */
+// Extract token paths for comparison
 function getAllTokenPaths(data, prefix = '') {
   const tokens = {};
   
@@ -530,63 +486,36 @@ function getAllTokenPaths(data, prefix = '') {
 // PLUGIN INITIALIZATION
 // ============================================================================
 
-/**
- * Plugin Initialization
- * 
- * Initializes the Figma plugin UI with specified dimensions and sets up
- * the message handling system for communication between the plugin and UI.
- */
 figma.showUI(__html__, { width: 500, height: 800 });
 
-/**
- * Central Message Handler
- * 
- * Handles all incoming messages from the plugin UI and routes them to
- * the appropriate service functions. This is the main communication bridge
- * between the UI and the plugin's core functionality.
- */
 figma.ui.onmessage = (msg) => {
-  console.log('📨 Message received in main plugin:', msg);
+  console.log('📨 Message received:', msg);
   
-  // Health check - verify plugin communication
   if (msg.type === 'ping') {
-    console.log('▶️ Ping received, responding with pong');
     figma.ui.postMessage({ type: 'pong' });
   }
   
-  // GitHub configuration management
   if (msg.type === 'load-github-config') {
-    console.log('📋 Loading GitHub configuration...');
     loadGitHubConfig();
   }
   
-  // Figma collections management
   if (msg.type === 'load-collections') {
-    console.log('📁 Loading Figma variable collections...');
     loadCollections();
   }
   
-  // Token export operations
   if (msg.type === 'export-selected-tokens') {
-    console.log('🎨 Exporting selected design tokens...');
     exportSelectedTokens(msg.selectedCollections);
   }
   
-  // GitHub configuration persistence
   if (msg.type === 'save-github-config') {
-    console.log('⚙️ Saving GitHub configuration...');
     saveGitHubConfig(msg.config);
   }
   
-  // GitHub integration - create pull request
   if (msg.type === 'export-to-github') {
-    console.log('🚀 Exporting tokens to GitHub...');
     exportToGitHub(msg.selectedCollections, msg.commitDescription);
   }
   
-  // Plugin cleanup
   if (msg.type === 'close') {
-    console.log('👋 Closing plugin...');
     figma.closePlugin();
   }
 };
