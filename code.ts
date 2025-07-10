@@ -1,7 +1,7 @@
 // This is the main plugin code that runs in the Figma environment
 
 // Declare global figma object for TypeScript
-declare const figma: PluginAPI;
+declare const figma: any;
 declare const __html__: string;
 
 interface GitHubConfig {
@@ -447,7 +447,7 @@ async function createGitHubPR(config: GitHubConfig, tokensData: Record<string, a
       ? commitDescription 
       : `Update Figma tokens - ${new Date().toLocaleString()}`;
     
-    const updateFilePayload = {
+    const updateFilePayload: any = {
       message: commitMessage,
       content: fileContent,
       branch: branchName
