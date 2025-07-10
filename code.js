@@ -320,6 +320,9 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
       setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
 
+    // Save current tokens as previous version for next comparison
+    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
+
     // Create GitHub PR
     await createGitHubPR(githubConfig, structuredTokens, commitDescription);
     
@@ -432,12 +435,12 @@ async function createGitHubPR(config, tokensData, commitDescription = '') {
         'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        title: `🎨 Update Figma Design Tokens`,
-        head: branchName,
-        base: 'main',
-        body: generatePRDescription(tokensData, commitDescription)
-      })
+        body: JSON.stringify({
+          title: `🎨 Update Figma Design Tokens`,
+          head: branchName,
+          base: 'main',
+          body: await generatePRDescription(tokensData, commitDescription)
+        })
     });
     
     if (!prResponse.ok) {
@@ -462,7 +465,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '') {
 }
 
 // Function to generate PR description with detailed changelog
-function generatePRDescription(tokensData, commitDescription) {
+async function generatePRDescription(tokensData, commitDescription) {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;
   
@@ -474,35 +477,111 @@ function generatePRDescription(tokensData, commitDescription) {
   description += `- Arquivo atualizado: \`${filePath}\`\n`;
   description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
   
-  description += `### Collections Atualizadas:\n`;
+  // Load previous version for comparison
+  const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+  const changes = compareTokens(prevData, tokensData);
   
-  Object.keys(tokensData).forEach(collectionName => {
-    const collection = tokensData[collectionName];
-    const tokenCount = countTokensInCollection(collection);
-    description += `- **${collectionName}** (${tokenCount} tokens)\n`;
-  });
-  
-  description += `\n### Resumo das Alterações:\n`;
-  
-  Object.keys(tokensData).forEach(collectionName => {
-    const collection = tokensData[collectionName];
-    const tokenList = getTokenListFromCollection(collection, collectionName);
+  if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
+    description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
+  } else {
+    description += `### Resumo das Alterações:\n`;
     
-    if (tokenList.length > 0) {
-      description += `\n#### ${collectionName}\n`;
-      tokenList.slice(0, 10).forEach(token => {
-        description += `- \`${token.name}\`: ${token.value}\n`;
+    if (changes.added.length > 0) {
+      description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
+      changes.added.forEach(token => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
       });
-      
-      if (tokenList.length > 10) {
-        description += `- ... e mais ${tokenList.length - 10} tokens\n`;
-      }
     }
-  });
+    
+    if (changes.modified.length > 0) {
+      description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
+      changes.modified.forEach(token => {
+        description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
+      });
+    }
+    
+    if (changes.removed.length > 0) {
+      description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
+      changes.removed.forEach(token => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
+      });
+    }
+  }
   
   description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
   
   return description;
+}
+
+// Function to compare tokens and find differences
+function compareTokens(prevData, newData) {
+  const changes = {
+    added: [],
+    modified: [],
+    removed: []
+  };
+  
+  // Get all token paths from both datasets
+  const prevTokens = getAllTokenPaths(prevData);
+  const newTokens = getAllTokenPaths(newData);
+  
+  const prevPaths = Object.keys(prevTokens);
+  const newPaths = Object.keys(newTokens);
+  
+  // Find added tokens
+  newPaths.forEach(path => {
+    if (!prevPaths.includes(path)) {
+      changes.added.push({
+        path: path,
+        value: newTokens[path]
+      });
+    }
+  });
+  
+  // Find removed tokens
+  prevPaths.forEach(path => {
+    if (!newPaths.includes(path)) {
+      changes.removed.push({
+        path: path,
+        value: prevTokens[path]
+      });
+    }
+  });
+  
+  // Find modified tokens
+  newPaths.forEach(path => {
+    if (prevPaths.includes(path) && prevTokens[path] !== newTokens[path]) {
+      changes.modified.push({
+        path: path,
+        oldValue: prevTokens[path],
+        newValue: newTokens[path]
+      });
+    }
+  });
+  
+  return changes;
+}
+
+// Helper function to get all token paths with their values
+function getAllTokenPaths(data, prefix = '') {
+  const tokens = {};
+  
+  function extractPaths(obj, currentPrefix) {
+    for (const key in obj) {
+      const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
+      
+      if (obj[key] && typeof obj[key] === 'object') {
+        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
+          tokens[fullPath] = obj[key].value;
+        } else {
+          extractPaths(obj[key], fullPath);
+        }
+      }
+    }
+  }
+  
+  extractPaths(data, prefix);
+  return tokens;
 }
 
 // Helper function to count tokens in a collection
