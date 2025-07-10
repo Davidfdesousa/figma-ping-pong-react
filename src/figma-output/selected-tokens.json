@@ -17,7 +17,7 @@
       },
       "green": {
         "200": {
-          "value": "#2BE748",
+          "value": "#32F950",
           "type": "other"
         },
         "500": {
@@ -31,7 +31,7 @@
       },
       "blue": {
         "200": {
-          "value": "#1A90FF",
+          "value": "#3FA2FF",
           "type": "other"
         },
         "500": {
@@ -59,7 +59,7 @@
       },
       "scarlet": {
         "200": {
-          "value": "#FF8787",
+          "value": "#F17575",
           "type": "other"
         },
         "500": {
