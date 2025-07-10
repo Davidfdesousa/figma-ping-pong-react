@@ -65,7 +65,7 @@ function setNestedValue(obj, path, value) {
   current[path[path.length - 1]] = value;
 }
 
-// Token Service functions
+// Figma API Service functions
 async function loadCollections() {
   try {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -114,6 +114,58 @@ async function exportSelectedTokens(selectedCollectionIds) {
       message: 'Erro ao exportar tokens selecionados: ' + error.message 
     });
   }
+}
+
+async function generateTokensData(selectedCollectionIds) {
+  const localVariables = await figma.variables.getLocalVariablesAsync();
+  const structuredTokens = {};
+  
+  for (const variable of localVariables) {
+    const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+    
+    if (!selectedCollectionIds.includes(collection.id)) {
+      continue;
+    }
+    
+    const tokenValues = {};
+    const hasMultipleModes = collection.modes.length > 1;
+    
+    for (const modeId of collection.modes.map(mode => mode.modeId)) {
+      const mode = collection.modes.find(m => m.modeId === modeId);
+      const value = variable.valuesByMode[modeId];
+      
+      if (value !== undefined) {
+        if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+          const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
+          tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+        } else {
+          tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
+        }
+      }
+    }
+    
+    const collectionName = collection.name;
+    const tokenPath = parseTokenPath(variable.name);
+    
+    if (!structuredTokens[collectionName]) {
+      structuredTokens[collectionName] = {};
+    }
+    
+    const tokenData = {
+      value: tokenValues[collection.modes[0].name] || null,
+      type: "other"
+    };
+    
+    if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
+      tokenData["$extensions"] = {
+        mode: tokenValues
+      };
+    }
+    
+    setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
+  }
+  
+  return structuredTokens;
 }
 
 // GitHub Service functions
@@ -173,100 +225,6 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
       message: 'Erro ao exportar para GitHub: ' + error.message 
     });
   }
-}
-
-figma.showUI(__html__, { width: 500, height: 800 });
-
-// Message handling
-figma.ui.onmessage = (msg) => {
-  console.log('Received message in code.js:', msg);
-  
-  if (msg.type === 'ping') {
-    console.log('▶️ Ping recebido no code.js');
-    figma.ui.postMessage({ type: 'pong' });
-  }
-  
-  if (msg.type === 'load-github-config') {
-    console.log('📋 Carregando configuração do GitHub...');
-    loadGitHubConfig();
-  }
-  
-  if (msg.type === 'load-collections') {
-    console.log('📁 Carregando collections...');
-    loadCollections();
-  }
-  
-  if (msg.type === 'export-selected-tokens') {
-    console.log('🎨 Exportando tokens selecionados...');
-    exportSelectedTokens(msg.selectedCollections);
-  }
-  
-  if (msg.type === 'save-github-config') {
-    console.log('⚙️ Salvando configuração do GitHub...');
-    saveGitHubConfig(msg.config);
-  }
-  
-  if (msg.type === 'export-to-github') {
-    console.log('🚀 Exportando para GitHub...');
-    exportToGitHub(msg.selectedCollections, msg.commitDescription);
-  }
-  
-  if (msg.type === 'close') {
-    figma.closePlugin();
-  }
-};
-
-// Token generation helper
-async function generateTokensData(selectedCollectionIds) {
-  const localVariables = await figma.variables.getLocalVariablesAsync();
-  const structuredTokens = {};
-  
-  for (const variable of localVariables) {
-    const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
-    
-    if (!selectedCollectionIds.includes(collection.id)) {
-      continue;
-    }
-    
-    const tokenValues = {};
-    const hasMultipleModes = collection.modes.length > 1;
-    
-    for (const modeId of collection.modes.map(mode => mode.modeId)) {
-      const mode = collection.modes.find(m => m.modeId === modeId);
-      const value = variable.valuesByMode[modeId];
-      
-      if (value !== undefined) {
-        if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-          const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-          tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
-        } else {
-          tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
-        }
-      }
-    }
-    
-    const collectionName = collection.name;
-    const tokenPath = parseTokenPath(variable.name);
-    
-    if (!structuredTokens[collectionName]) {
-      structuredTokens[collectionName] = {};
-    }
-    
-    const tokenData = {
-      value: tokenValues[collection.modes[0].name] || null,
-      type: "other"
-    };
-    
-    if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
-      tokenData["$extensions"] = {
-        mode: tokenValues
-      };
-    }
-    
-    setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
-  }
-  
-  return structuredTokens;
 }
 
 async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
@@ -398,7 +356,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
   }
 }
 
-// PR Description Generation Service
+// PR Description Generation
 async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;
@@ -444,7 +402,7 @@ async function generatePRDescription(tokensData, commitDescription, prevData = {
   return description;
 }
 
-// Token Comparison Service
+// Token Comparison
 function compareTokens(prevData, newData) {
   const changes = { added: [], modified: [], removed: [] };
   const prevTokens = getAllTokenPaths(prevData);
@@ -500,3 +458,45 @@ function getAllTokenPaths(data, prefix = '') {
   extractPaths(data, prefix);
   return tokens;
 }
+
+// Initialize plugin
+figma.showUI(__html__, { width: 500, height: 800 });
+
+// Message handling
+figma.ui.onmessage = (msg) => {
+  console.log('Received message in code.js:', msg);
+  
+  if (msg.type === 'ping') {
+    console.log('▶️ Ping recebido no code.js');
+    figma.ui.postMessage({ type: 'pong' });
+  }
+  
+  if (msg.type === 'load-github-config') {
+    console.log('📋 Carregando configuração do GitHub...');
+    loadGitHubConfig();
+  }
+  
+  if (msg.type === 'load-collections') {
+    console.log('📁 Carregando collections...');
+    loadCollections();
+  }
+  
+  if (msg.type === 'export-selected-tokens') {
+    console.log('🎨 Exportando tokens selecionados...');
+    exportSelectedTokens(msg.selectedCollections);
+  }
+  
+  if (msg.type === 'save-github-config') {
+    console.log('⚙️ Salvando configuração do GitHub...');
+    saveGitHubConfig(msg.config);
+  }
+  
+  if (msg.type === 'export-to-github') {
+    console.log('🚀 Exportando para GitHub...');
+    exportToGitHub(msg.selectedCollections, msg.commitDescription);
+  }
+  
+  if (msg.type === 'close') {
+    figma.closePlugin();
+  }
+};

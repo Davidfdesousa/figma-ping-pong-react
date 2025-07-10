@@ -1,15 +1,16 @@
 
 # Figma Token Exporter
 
-Plugin para Figma que permite exportar tokens (variáveis) e collections do seu arquivo Figma para formato JSON.
+Plugin modular para Figma que permite exportar design tokens e integração completa com GitHub workflows.
 
 ## 🚀 Funcionalidades
 
-- ✅ Exportar todos os tokens/variáveis do arquivo Figma
-- ✅ Exportar collections de variáveis
-- ✅ Download automático dos arquivos JSON
-- ✅ Suporte a múltiplos modos (light/dark, etc.)
-- ✅ Tratamento de aliases entre variáveis
+- ✅ **Exportação de Tokens**: Exporta tokens/variáveis do Figma com suporte a múltiplos modos
+- ✅ **Integração GitHub**: Criação automática de PRs com rastreamento de mudanças
+- ✅ **Comparação de Tokens**: Detecção inteligente de alterações entre versões
+- ✅ **Arquitetura Modular**: Código limpo e organizado com responsabilidades separadas
+- ✅ **Tratamento de Aliases**: Suporte completo a referências entre variáveis
+- ✅ **Interface Intuitiva**: UI React moderna e responsiva
 
 ## 📥 Como usar
 
@@ -57,12 +58,33 @@ Plugin para Figma que permite exportar tokens (variáveis) e collections do seu 
 }
 ```
 
-## 🔧 Estrutura do projeto
+## 🏗️ Arquitetura Modular
 
-- `manifest.json` - Configuração do plugin
-- `code.js` - Código principal (roda no ambiente Figma)
-- `ui.html` - Interface do usuário
-- `README.md` - Documentação
+```
+├── manifest.json           # Configuração do plugin
+├── code.js                # Orquestrador principal (roda no ambiente Figma)
+├── ui.html                # Interface do usuário
+├── hooks/                 # Módulos de serviços
+│   ├── figma-api-service.js    # Operações da API do Figma
+│   ├── github-service.js       # Operações da API do GitHub
+│   ├── token-service.js        # Processamento de tokens
+│   ├── utils.js               # Funções utilitárias
+│   ├── comparison-service.js   # Comparação de tokens
+│   ├── pr-service.js          # Geração de descrições de PR
+│   └── message-handler.js     # Comunicação plugin-UI
+└── src/                   # Código fonte da UI React
+```
+
+### Separação de Responsabilidades
+
+- **code.js**: Orquestrador principal que delega para serviços especializados
+- **figma-api-service.js**: Gerencia todas as interações com a API do Figma
+- **github-service.js**: Operações de GitHub e criação de PRs
+- **token-service.js**: Processamento e estruturação de dados de tokens
+- **utils.js**: Funções utilitárias compartilhadas
+- **comparison-service.js**: Lógica de comparação entre versões de tokens
+- **pr-service.js**: Geração de descrições detalhadas de PRs
+- **message-handler.js**: Gerenciamento de comunicação entre plugin e UI
 
 ## 💡 Casos de uso
 
