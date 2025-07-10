@@ -373,7 +373,9 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
       throw new Error(`Error updating file: ${updateFileResponse.statusText}`);
     }
     
-    // Create Pull Request
+    // Create Pull Request with detailed changelog
+    const prDescription = await generatePRDescription(tokensData, commitDescription, prevData);
+    
     const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
       headers: {
@@ -385,7 +387,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
           title: `🎨 Update Figma Design Tokens`,
           head: branchName,
           base: 'main',
-          body: `## 🎨 Figma Design Tokens Update\n\n${commitDescription ? `### Changes:\n${commitDescription}\n\n` : ''}### Update Details:\n- File updated: \`${filePath}\`\n- Exported at: ${new Date().toLocaleString()}\n\n_This PR was generated automatically by the Figma Token Exporter plugin._`
+          body: prDescription
         })
     });
     
@@ -408,6 +410,120 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
       message: 'GitHub API error: ' + error.message 
     });
   }
+}
+
+// ============================================================================
+// COMPARISON AND PR GENERATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Generates a comprehensive pull request description with detailed changelog
+ */
+async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
+  const filePath = 'src/figma-output/selected-tokens.json';
+  let description = `## 🎨 Figma Design Tokens Update\n\n`;
+  
+  if (commitDescription) {
+    description += `### Alterações:\n${commitDescription}\n\n`;
+  }
+  
+  description += `### Detalhes da Atualização:\n`;
+  description += `- Arquivo atualizado: \`${filePath}\`\n`;
+  description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
+  
+  const changes = compareTokens(prevData, tokensData);
+  
+  if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
+    description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
+  } else {
+    description += `### Resumo das Alterações:\n`;
+    
+    if (changes.added.length > 0) {
+      description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
+      changes.added.forEach((token) => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
+      });
+    }
+    
+    if (changes.modified.length > 0) {
+      description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
+      changes.modified.forEach((token) => {
+        description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
+      });
+    }
+    
+    if (changes.removed.length > 0) {
+      description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
+      changes.removed.forEach((token) => {
+        description += `- \`${token.path}\`: ${token.value}\n`;
+      });
+    }
+  }
+  
+  description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
+  return description;
+}
+
+/**
+ * Compares two token datasets and identifies all changes
+ */
+function compareTokens(prevData, newData) {
+  const changes = { added: [], modified: [], removed: [] };
+  const prevTokens = getAllTokenPaths(prevData);
+  const newTokens = getAllTokenPaths(newData);
+  const prevPaths = Object.keys(prevTokens);
+  const newPaths = Object.keys(newTokens);
+  
+  newPaths.forEach(path => {
+    if (!prevPaths.includes(path)) {
+      changes.added.push({ path: path, value: newTokens[path] });
+    }
+  });
+  
+  prevPaths.forEach(path => {
+    if (!newPaths.includes(path)) {
+      changes.removed.push({ path: path, value: prevTokens[path] });
+    }
+  });
+  
+  newPaths.forEach(path => {
+    if (prevPaths.includes(path)) {
+      const prevValue = String(prevTokens[path]).trim();
+      const newValue = String(newTokens[path]).trim();
+      if (prevValue !== newValue) {
+        changes.modified.push({
+          path: path,
+          oldValue: prevValue,
+          newValue: newValue
+        });
+      }
+    }
+  });
+  
+  return changes;
+}
+
+/**
+ * Extracts all token paths from a nested data structure
+ */
+function getAllTokenPaths(data, prefix = '') {
+  const tokens = {};
+  
+  function extractPaths(obj, currentPrefix) {
+    for (const key in obj) {
+      const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
+      if (obj[key] && typeof obj[key] === 'object') {
+        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
+          tokens[fullPath] = obj[key].value;
+        } else {
+          extractPaths(obj[key], fullPath);
+        }
+      }
+    }
+  }
+  
+  extractPaths(data, prefix);
+  return tokens;
 }
 
 // ============================================================================
