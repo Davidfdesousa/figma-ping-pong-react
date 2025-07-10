@@ -1,7 +1,44 @@
 // This is the main plugin code that runs in the Figma environment
 
+interface GitHubConfig {
+  token: string;
+  repo: string;
+  owner: string;
+}
+
+interface TokenChange {
+  path: string;
+  value?: string;
+  oldValue?: string;
+  newValue?: string;
+}
+
+interface TokenChanges {
+  added: TokenChange[];
+  modified: TokenChange[];
+  removed: TokenChange[];
+}
+
+interface CollectionData {
+  id: string;
+  name: string;
+  variableCount: number;
+  modes: Array<{
+    modeId: string;
+    name: string;
+  }>;
+}
+
+interface TokenData {
+  value: string | null;
+  type: string;
+  $extensions?: {
+    mode: Record<string, string>;
+  };
+}
+
 // Helper function to convert string to base64 (compatible with Figma environment)
-function stringToBase64(str) {
+function stringToBase64(str: string): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
   let i = 0;
@@ -258,10 +295,13 @@ async function saveGitHubConfig(config) {
   }
 }
 
-async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
+async function exportToGitHub(selectedCollectionIds: string[], commitDescription: string = ''): Promise<void> {
   try {
+    // Load previous version for comparison BEFORE generating new data
+    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+
     // Get GitHub configuration
-    const githubConfig = await figma.clientStorage.getAsync('github-config');
+    const githubConfig: GitHubConfig = await figma.clientStorage.getAsync('github-config');
     
     if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
       figma.ui.postMessage({ 
@@ -273,7 +313,7 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
 
     // Generate tokens data
     const localVariables = await figma.variables.getLocalVariablesAsync();
-    const structuredTokens = {};
+    const structuredTokens: Record<string, any> = {};
     
     for (const variable of localVariables) {
       const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
@@ -282,7 +322,7 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
         continue;
       }
       
-      const tokenValues = {};
+      const tokenValues: Record<string, any> = {};
       const hasMultipleModes = collection.modes.length > 1;
       
       for (const modeId of collection.modes.map(mode => mode.modeId)) {
@@ -306,7 +346,7 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
         structuredTokens[collectionName] = {};
       }
       
-      const tokenData = {
+      const tokenData: TokenData = {
         value: tokenValues[collection.modes[0].name] || null,
         type: "other"
       };
@@ -320,11 +360,11 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
       setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
 
-    // Save current tokens as previous version for next comparison
+    // Create GitHub PR with comparison
+    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
+    
+    // Save current tokens as previous version for next comparison (only after successful PR creation)
     await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
-
-    // Create GitHub PR
-    await createGitHubPR(githubConfig, structuredTokens, commitDescription);
     
   } catch (error) {
     console.error('Erro ao exportar para GitHub:', error);
@@ -335,7 +375,7 @@ async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
   }
 }
 
-async function createGitHubPR(config, tokensData, commitDescription = '') {
+async function createGitHubPR(config: GitHubConfig, tokensData: Record<string, any>, commitDescription: string = '', prevData: Record<string, any> = {}): Promise<void> {
   const { token, repo, owner } = config;
   const apiBase = 'https://api.github.com';
   
@@ -439,7 +479,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '') {
           title: `🎨 Update Figma Design Tokens`,
           head: branchName,
           base: 'main',
-          body: await generatePRDescription(tokensData, commitDescription)
+          body: await generatePRDescription(tokensData, commitDescription, prevData)
         })
     });
     
@@ -465,7 +505,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '') {
 }
 
 // Function to generate PR description with detailed changelog
-async function generatePRDescription(tokensData, commitDescription) {
+async function generatePRDescription(tokensData: Record<string, any>, commitDescription: string, prevData: Record<string, any> = {}): Promise<string> {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;
   
@@ -477,8 +517,7 @@ async function generatePRDescription(tokensData, commitDescription) {
   description += `- Arquivo atualizado: \`${filePath}\`\n`;
   description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
   
-  // Load previous version for comparison
-  const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+  // Compare with previous version
   const changes = compareTokens(prevData, tokensData);
   
   if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
@@ -488,21 +527,21 @@ async function generatePRDescription(tokensData, commitDescription) {
     
     if (changes.added.length > 0) {
       description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
-      changes.added.forEach(token => {
+      changes.added.forEach((token: TokenChange) => {
         description += `- \`${token.path}\`: ${token.value}\n`;
       });
     }
     
     if (changes.modified.length > 0) {
       description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
-      changes.modified.forEach(token => {
+      changes.modified.forEach((token: TokenChange) => {
         description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
       });
     }
     
     if (changes.removed.length > 0) {
       description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
-      changes.removed.forEach(token => {
+      changes.removed.forEach((token: TokenChange) => {
         description += `- \`${token.path}\`: ${token.value}\n`;
       });
     }
@@ -514,8 +553,8 @@ async function generatePRDescription(tokensData, commitDescription) {
 }
 
 // Function to compare tokens and find differences
-function compareTokens(prevData, newData) {
-  const changes = {
+function compareTokens(prevData: Record<string, any>, newData: Record<string, any>): TokenChanges {
+  const changes: TokenChanges = {
     added: [],
     modified: [],
     removed: []
@@ -550,12 +589,17 @@ function compareTokens(prevData, newData) {
   
   // Find modified tokens
   newPaths.forEach(path => {
-    if (prevPaths.includes(path) && prevTokens[path] !== newTokens[path]) {
-      changes.modified.push({
-        path: path,
-        oldValue: prevTokens[path],
-        newValue: newTokens[path]
-      });
+    if (prevPaths.includes(path)) {
+      const prevValue = String(prevTokens[path]).trim();
+      const newValue = String(newTokens[path]).trim();
+      
+      if (prevValue !== newValue) {
+        changes.modified.push({
+          path: path,
+          oldValue: prevValue,
+          newValue: newValue
+        });
+      }
     }
   });
   
