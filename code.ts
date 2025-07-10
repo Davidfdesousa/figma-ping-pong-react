@@ -1,5 +1,9 @@
 // This is the main plugin code that runs in the Figma environment
 
+// Declare global figma object for TypeScript
+declare const figma: PluginAPI;
+declare const __html__: string;
+
 interface GitHubConfig {
   token: string;
   repo: string;
@@ -69,8 +73,8 @@ function stringToBase64(str: string): string {
 
 figma.showUI(__html__, { width: 500, height: 800 });
 
-figma.ui.onmessage = msg => {
-  console.log('Received message in code.js:', msg);
+figma.ui.onmessage = (msg: any) => {
+  console.log('Received message in code.ts:', msg);
   
   if (msg.type === 'ping') {
     console.log('▶️ Ping recebido no code.js');
@@ -107,10 +111,10 @@ figma.ui.onmessage = msg => {
   }
 };
 
-async function loadCollections() {
+async function loadCollections(): Promise<void> {
   try {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
-    const collectionsData = [];
+    const collectionsData: CollectionData[] = [];
     
     for (const collection of collections) {
       const variableCount = collection.variableIds.length;
@@ -130,7 +134,7 @@ async function loadCollections() {
       data: collectionsData 
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao carregar collections:', error);
     figma.ui.postMessage({ 
       type: 'load-error', 
@@ -139,7 +143,7 @@ async function loadCollections() {
   }
 }
 
-async function exportSelectedTokens(selectedCollectionIds) {
+async function exportSelectedTokens(selectedCollectionIds: string[]): Promise<void> {
   try {
     const localVariables = await figma.variables.getLocalVariablesAsync();
     const structuredTokens = {};
@@ -201,7 +205,7 @@ async function exportSelectedTokens(selectedCollectionIds) {
       data: structuredTokens 
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao exportar tokens selecionados:', error);
     figma.ui.postMessage({ 
       type: 'export-error', 
@@ -212,7 +216,7 @@ async function exportSelectedTokens(selectedCollectionIds) {
 
 
 // Helper function to format token values based on type
-function formatTokenValue(value, type) {
+function formatTokenValue(value: any, type: string): string {
   if (type === 'COLOR') {
     if (typeof value === 'object' && value.r !== undefined) {
       // Convert RGB to hex
@@ -233,7 +237,7 @@ function formatTokenValue(value, type) {
 
 
 // Helper function to parse token path from name
-function parseTokenPath(tokenName) {
+function parseTokenPath(tokenName: string): string[] {
   // Convert token name to nested path
   // Examples: "color/neutral/100" -> ["color", "neutral", "100"]
   //           "spacing-4" -> ["spacing", "4"]
@@ -248,7 +252,7 @@ function parseTokenPath(tokenName) {
 }
 
 // Helper function to set nested values in object
-function setNestedValue(obj, path, value) {
+function setNestedValue(obj: Record<string, any>, path: string[], value: any): void {
   let current = obj;
   
   for (let i = 0; i < path.length - 1; i++) {
@@ -263,14 +267,14 @@ function setNestedValue(obj, path, value) {
 }
 
 // GitHub integration functions
-async function loadGitHubConfig() {
+async function loadGitHubConfig(): Promise<void> {
   try {
     const config = await figma.clientStorage.getAsync('github-config');
     figma.ui.postMessage({ 
       type: 'github-config-loaded',
       data: config || {}
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao carregar configuração do GitHub:', error);
     figma.ui.postMessage({ 
       type: 'github-config-loaded',
@@ -279,14 +283,14 @@ async function loadGitHubConfig() {
   }
 }
 
-async function saveGitHubConfig(config) {
+async function saveGitHubConfig(config: GitHubConfig): Promise<void> {
   try {
     await figma.clientStorage.setAsync('github-config', config);
     figma.ui.postMessage({ 
       type: 'github-config-saved',
       message: 'Configuração do GitHub salva com sucesso!'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao salvar configuração do GitHub:', error);
     figma.ui.postMessage({ 
       type: 'github-error', 
@@ -366,7 +370,7 @@ async function exportToGitHub(selectedCollectionIds: string[], commitDescription
     // Save current tokens as previous version for next comparison (only after successful PR creation)
     await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao exportar para GitHub:', error);
     figma.ui.postMessage({ 
       type: 'github-error', 
@@ -495,7 +499,7 @@ async function createGitHubPR(config: GitHubConfig, tokensData: Record<string, a
       prUrl: prData.html_url
     });
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro na API do GitHub:', error);
     figma.ui.postMessage({ 
       type: 'github-error', 
@@ -607,10 +611,10 @@ function compareTokens(prevData: Record<string, any>, newData: Record<string, an
 }
 
 // Helper function to get all token paths with their values
-function getAllTokenPaths(data, prefix = '') {
-  const tokens = {};
+function getAllTokenPaths(data: Record<string, any>, prefix: string = ''): Record<string, any> {
+  const tokens: Record<string, any> = {};
   
-  function extractPaths(obj, currentPrefix) {
+  function extractPaths(obj: Record<string, any>, currentPrefix: string): void {
     for (const key in obj) {
       const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
       
@@ -629,10 +633,10 @@ function getAllTokenPaths(data, prefix = '') {
 }
 
 // Helper function to count tokens in a collection
-function countTokensInCollection(collection) {
+function countTokensInCollection(collection: Record<string, any>): number {
   let count = 0;
   
-  function countRecursive(obj) {
+  function countRecursive(obj: Record<string, any>): void {
     for (const key in obj) {
       if (obj[key] && typeof obj[key] === 'object') {
         if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
@@ -649,10 +653,10 @@ function countTokensInCollection(collection) {
 }
 
 // Helper function to get a flat list of tokens from a collection
-function getTokenListFromCollection(collection, collectionName, prefix = '') {
-  const tokens = [];
+function getTokenListFromCollection(collection: Record<string, any>, collectionName: string, prefix: string = ''): Array<{name: string, value: any, type: string}> {
+  const tokens: Array<{name: string, value: any, type: string}> = [];
   
-  function extractTokens(obj, currentPrefix) {
+  function extractTokens(obj: Record<string, any>, currentPrefix: string): void {
     for (const key in obj) {
       const fullKey = currentPrefix ? `${currentPrefix}.${key}` : key;
       
