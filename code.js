@@ -89,9 +89,7 @@ function setNestedValue(obj, path, value) {
 // INLINE SERVICE IMPLEMENTATIONS
 // ============================================================================
 
-/**
- * Load collections from Figma API
- */
+// Import services (inline for Figma compatibility)
 async function loadCollections() {
   try {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -124,9 +122,6 @@ async function loadCollections() {
   }
 }
 
-/**
- * Export selected tokens
- */
 async function exportSelectedTokens(selectedCollectionIds) {
   try {
     const structuredTokens = await generateTokensData(selectedCollectionIds);
