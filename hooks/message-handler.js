@@ -1,6 +1,41 @@
-// Message handler for Figma plugin communication
+/**
+ * Message Handler Service
+ * 
+ * This service manages all communication between the Figma plugin UI and the
+ * main plugin code. It acts as a central message router that dispatches
+ * incoming messages to appropriate service functions.
+ * 
+ * The handler supports:
+ * - Health check messages (ping/pong)
+ * - GitHub configuration operations
+ * - Token collection management
+ * - Export operations (local and GitHub)
+ * - Plugin lifecycle management
+ * 
+ * @module MessageHandler
+ * @version 1.0.0
+ */
 
-// Message handler function
+/**
+ * Central message handling function for plugin communication
+ * 
+ * This function receives all messages from the plugin UI and routes them
+ * to the appropriate service functions. It provides a clean separation
+ * between UI communication and business logic.
+ * 
+ * @function handleMessage
+ * @param {Object} msg - Message object from the plugin UI
+ * @param {string} msg.type - Type of operation to perform
+ * @param {*} [msg.data] - Additional data payload for the operation
+ * 
+ * @example
+ * // Called automatically when UI sends messages
+ * handleMessage({ type: 'load-collections' });
+ * handleMessage({ 
+ *   type: 'export-tokens', 
+ *   selectedCollections: ['collection-id-1'] 
+ * });
+ */
 function handleMessage(msg) {
   console.log('Received message in code.js:', msg);
   

@@ -1,6 +1,43 @@
-// Pull Request generation service
+/**
+ * Pull Request Generation Service
+ * 
+ * This service specializes in generating detailed and informative pull request
+ * descriptions for design token updates. It creates professional, structured
+ * documentation that helps team members understand what changes were made.
+ * 
+ * Features:
+ * - Automatic changelog generation
+ * - Categorized change summaries (added/modified/removed)
+ * - Timestamp and metadata inclusion
+ * - Integration with comparison service for accurate change detection
+ * 
+ * @module PRService
+ * @version 1.0.0
+ */
 
-// Function to generate PR description with detailed changelog
+/**
+ * Generates a comprehensive pull request description with detailed changelog
+ * 
+ * This function creates a professional PR description that includes:
+ * - Custom commit message (if provided)
+ * - File update details and timestamp
+ * - Categorized summary of all token changes
+ * - Detailed breakdown of added, modified, and removed tokens
+ * 
+ * @async
+ * @function generatePRDescription
+ * @param {Object} tokensData - Current token data being committed
+ * @param {string} commitDescription - Custom description from user
+ * @param {Object} [prevData={}] - Previous token data for comparison
+ * @returns {Promise<string>} Formatted markdown description for the PR
+ * 
+ * @example
+ * const description = await generatePRDescription(
+ *   newTokens, 
+ *   'Updated color system', 
+ *   oldTokens
+ * );
+ */
 async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
   const filePath = 'src/figma-output/selected-tokens.json';
   let description = `## 🎨 Figma Design Tokens Update\n\n`;

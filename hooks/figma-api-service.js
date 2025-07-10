@@ -1,6 +1,37 @@
-// Figma API service for token operations
+/**
+ * Figma API Service
+ * 
+ * This service handles all interactions with the Figma API for token-related operations.
+ * It provides functions to load variable collections, export tokens, and generate
+ * structured token data that can be consumed by design systems and development teams.
+ * 
+ * The service manages:
+ * - Loading variable collections from Figma
+ * - Processing individual variables and their modes
+ * - Handling variable aliases and references
+ * - Structuring token data for export
+ * 
+ * @module FigmaAPIService
+ * @version 1.0.0
+ */
 
-// Load collections from Figma API
+/**
+ * Loads all variable collections from the current Figma file
+ * 
+ * This function retrieves all local variable collections and formats them
+ * for display in the plugin UI. It includes metadata about each collection
+ * such as variable count and available modes.
+ * 
+ * @async
+ * @function loadCollections
+ * @returns {Promise<void>} Sends collection data to UI via postMessage
+ * 
+ * @throws {Error} When Figma API calls fail or collections can't be loaded
+ * 
+ * @example
+ * // Called from main plugin when UI requests collection data
+ * await loadCollections();
+ */
 async function loadCollections() {
   try {
     const collections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -33,7 +64,24 @@ async function loadCollections() {
   }
 }
 
-// Export selected tokens from Figma
+/**
+ * Exports tokens from selected collections
+ * 
+ * This function processes the selected variable collections and exports their
+ * tokens in a structured format. It's the main entry point for token export
+ * operations that don't involve GitHub integration.
+ * 
+ * @async
+ * @function exportSelectedTokens
+ * @param {string[]} selectedCollectionIds - Array of collection IDs to export
+ * @returns {Promise<void>} Sends structured token data to UI via postMessage
+ * 
+ * @throws {Error} When token generation fails or collections can't be processed
+ * 
+ * @example
+ * // Export tokens from specific collections
+ * await exportSelectedTokens(['collection-id-1', 'collection-id-2']);
+ */
 async function exportSelectedTokens(selectedCollectionIds) {
   try {
     const structuredTokens = await generateTokensData(selectedCollectionIds);
@@ -52,7 +100,27 @@ async function exportSelectedTokens(selectedCollectionIds) {
   }
 }
 
-// Generate tokens data from selected collections
+/**
+ * Generates structured token data from selected collections
+ * 
+ * This is the core function that processes Figma variables and converts them
+ * into a structured token format. It handles:
+ * - Variable value extraction across different modes
+ * - Alias resolution for referenced variables
+ * - Token type classification and formatting
+ * - Hierarchical token structure creation
+ * 
+ * @async
+ * @function generateTokensData
+ * @param {string[]} selectedCollectionIds - Collection IDs to process
+ * @returns {Promise<Object>} Structured token data organized by collection
+ * 
+ * @throws {Error} When variable processing fails or API calls are unsuccessful
+ * 
+ * @example
+ * const tokens = await generateTokensData(['collection-1', 'collection-2']);
+ * // Returns: { "Collection Name": { "token": { "path": { value: "...", type: "..." } } } }
+ */
 async function generateTokensData(selectedCollectionIds) {
   const localVariables = await figma.variables.getLocalVariablesAsync();
   const structuredTokens = {};

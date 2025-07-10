@@ -1,6 +1,30 @@
-// GitHub integration service for Figma Token Exporter Plugin
+/**
+ * GitHub Integration Service
+ * 
+ * This service handles all GitHub-related operations for the token export plugin.
+ * It manages configuration persistence, repository interactions, and automated
+ * pull request creation with detailed change tracking.
+ * 
+ * Features:
+ * - GitHub configuration management (tokens, repository settings)
+ * - Automated branch creation for token updates
+ * - File creation/updating in repositories
+ * - Pull request generation with detailed changelogs
+ * - Integration with comparison service for change detection
+ * 
+ * @module GitHubService
+ * @version 1.0.0
+ */
 
-// Helper function to convert string to base64 (compatible with Figma environment)
+/**
+ * Custom Base64 encoding function for GitHub API compatibility
+ * 
+ * GitHub API requires file content to be Base64 encoded. This implementation
+ * is compatible with the Figma plugin environment and doesn't rely on external libraries.
+ * 
+ * @param {string} str - String to encode
+ * @returns {string} Base64 encoded string
+ */
 function stringToBase64(str) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
@@ -30,7 +54,21 @@ function stringToBase64(str) {
   return result;
 }
 
-// GitHub configuration management
+/**
+ * Loads GitHub configuration from Figma's client storage
+ * 
+ * Retrieves previously saved GitHub configuration including access token,
+ * repository details, and user preferences. Returns empty object if no
+ * configuration exists.
+ * 
+ * @async
+ * @function loadGitHubConfig
+ * @returns {Promise<void>} Sends configuration data to UI via postMessage
+ * 
+ * @example
+ * // Load saved GitHub settings
+ * await loadGitHubConfig();
+ */
 async function loadGitHubConfig() {
   try {
     const config = await figma.clientStorage.getAsync('github-config');
@@ -39,7 +77,7 @@ async function loadGitHubConfig() {
       data: config || {}
     });
   } catch (error) {
-    console.error('Erro ao carregar configuração do GitHub:', error);
+    console.error('Error loading GitHub configuration:', error);
     figma.ui.postMessage({ 
       type: 'github-config-loaded',
       data: {}
@@ -47,150 +85,125 @@ async function loadGitHubConfig() {
   }
 }
 
+/**
+ * Saves GitHub configuration to Figma's client storage
+ * 
+ * Persists GitHub settings including access token, repository information,
+ * and user preferences for future plugin sessions.
+ * 
+ * @async
+ * @function saveGitHubConfig
+ * @param {Object} config - GitHub configuration object
+ * @param {string} config.token - GitHub personal access token
+ * @param {string} config.owner - Repository owner/organization
+ * @param {string} config.repo - Repository name
+ * @returns {Promise<void>} Sends success/error message to UI
+ * 
+ * @example
+ * await saveGitHubConfig({
+ *   token: 'ghp_xxxxxxxxxxxx',
+ *   owner: 'myorg',
+ *   repo: 'design-tokens'
+ * });
+ */
 async function saveGitHubConfig(config) {
   try {
     await figma.clientStorage.setAsync('github-config', config);
     figma.ui.postMessage({ 
       type: 'github-config-saved',
-      message: 'Configuração do GitHub salva com sucesso!'
+      message: 'GitHub configuration saved successfully!'
     });
   } catch (error) {
-    console.error('Erro ao salvar configuração do GitHub:', error);
+    console.error('Error saving GitHub configuration:', error);
     figma.ui.postMessage({ 
       type: 'github-error', 
-      message: 'Erro ao salvar configuração: ' + error.message 
+      message: 'Error saving configuration: ' + error.message 
     });
   }
 }
 
-// Token comparison and analysis
-function compareTokens(prevData, newData) {
-  const changes = {
-    added: [],
-    modified: [],
-    removed: []
-  };
-  
-  const prevTokens = getAllTokenPaths(prevData);
-  const newTokens = getAllTokenPaths(newData);
-  
-  const prevPaths = Object.keys(prevTokens);
-  const newPaths = Object.keys(newTokens);
-  
-  // Find added tokens
-  newPaths.forEach(path => {
-    if (!prevPaths.includes(path)) {
-      changes.added.push({
-        path: path,
-        value: newTokens[path]
+/**
+ * Exports design tokens to GitHub repository via automated pull request
+ * 
+ * This is the main GitHub integration function that orchestrates the entire
+ * export process including token generation, change detection, and PR creation.
+ * 
+ * @async
+ * @function exportToGitHub
+ * @param {string[]} selectedCollectionIds - Collections to export
+ * @param {string} [commitDescription=''] - Optional commit description
+ * @returns {Promise<void>} Creates PR and sends result to UI
+ * 
+ * @throws {Error} When GitHub configuration is missing or API calls fail
+ * 
+ * @example
+ * await exportToGitHub(
+ *   ['collection-1', 'collection-2'], 
+ *   'Updated primary color palette'
+ * );
+ */
+async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
+  try {
+    // Load previous version for comparison BEFORE generating new data
+    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
+
+    // Get GitHub configuration
+    const githubConfig = await figma.clientStorage.getAsync('github-config');
+    
+    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
+      figma.ui.postMessage({ 
+        type: 'github-error', 
+        message: 'GitHub configuration not found. Please configure first.' 
       });
+      return;
     }
-  });
-  
-  // Find removed tokens
-  prevPaths.forEach(path => {
-    if (!newPaths.includes(path)) {
-      changes.removed.push({
-        path: path,
-        value: prevTokens[path]
-      });
-    }
-  });
-  
-  // Find modified tokens
-  newPaths.forEach(path => {
-    if (prevPaths.includes(path)) {
-      const prevValue = String(prevTokens[path]).trim();
-      const newValue = String(newTokens[path]).trim();
-      
-      if (prevValue !== newValue) {
-        changes.modified.push({
-          path: path,
-          oldValue: prevValue,
-          newValue: newValue
-        });
-      }
-    }
-  });
-  
-  return changes;
+
+    // Generate tokens data (imported from figma-api-service)
+    const structuredTokens = await generateTokensData(selectedCollectionIds);
+
+    // Create GitHub PR with comparison
+    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
+    
+    // Save current tokens as previous version for next comparison (only after successful PR creation)
+    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
+    
+  } catch (error) {
+    console.error('Error exporting to GitHub:', error);
+    figma.ui.postMessage({ 
+      type: 'github-error', 
+      message: 'Error exporting to GitHub: ' + error.message 
+    });
+  }
 }
 
-function getAllTokenPaths(data, prefix = '') {
-  const tokens = {};
-  
-  function extractPaths(obj, currentPrefix) {
-    for (const key in obj) {
-      const fullPath = currentPrefix ? `${currentPrefix}.${key}` : key;
-      
-      if (obj[key] && typeof obj[key] === 'object') {
-        if (obj[key].hasOwnProperty('value') && obj[key].hasOwnProperty('type')) {
-          tokens[fullPath] = obj[key].value;
-        } else {
-          extractPaths(obj[key], fullPath);
-        }
-      }
-    }
-  }
-  
-  extractPaths(data, prefix);
-  return tokens;
-}
-
-// PR description generation
-async function generatePRDescription(tokensData, commitDescription, prevData = {}) {
-  const filePath = 'src/figma-output/selected-tokens.json';
-  let description = `## 🎨 Figma Design Tokens Update\n\n`;
-  
-  if (commitDescription) {
-    description += `### Alterações:\n${commitDescription}\n\n`;
-  }
-  
-  description += `### Detalhes da Atualização:\n`;
-  description += `- Arquivo atualizado: \`${filePath}\`\n`;
-  description += `- Exportado em: ${new Date().toLocaleString()}\n\n`;
-  
-  const changes = compareTokens(prevData, tokensData);
-  
-  if (changes.added.length === 0 && changes.modified.length === 0 && changes.removed.length === 0) {
-    description += `### Alterações:\nNenhuma alteração detectada nos tokens.\n\n`;
-  } else {
-    description += `### Resumo das Alterações:\n`;
-    
-    if (changes.added.length > 0) {
-      description += `\n#### ✅ Tokens Adicionados (${changes.added.length}):\n`;
-      changes.added.forEach((token) => {
-        description += `- \`${token.path}\`: ${token.value}\n`;
-      });
-    }
-    
-    if (changes.modified.length > 0) {
-      description += `\n#### 🔄 Tokens Modificados (${changes.modified.length}):\n`;
-      changes.modified.forEach((token) => {
-        description += `- \`${token.path}\`: \`${token.oldValue}\` → \`${token.newValue}\`\n`;
-      });
-    }
-    
-    if (changes.removed.length > 0) {
-      description += `\n#### ❌ Tokens Removidos (${changes.removed.length}):\n`;
-      changes.removed.forEach((token) => {
-        description += `- \`${token.path}\`: ${token.value}\n`;
-      });
-    }
-  }
-  
-  description += `\n_Este PR foi gerado automaticamente pelo Figma Token Exporter plugin._`;
-  
-  return description;
-}
-
-// GitHub API integration
+/**
+ * Creates a GitHub pull request with token updates
+ * 
+ * This function handles the complete GitHub workflow:
+ * 1. Gets the main branch SHA
+ * 2. Creates a new feature branch with timestamp
+ * 3. Creates/updates the tokens file
+ * 4. Creates a pull request with detailed changelog
+ * 
+ * @async
+ * @function createGitHubPR
+ * @param {Object} config - GitHub configuration
+ * @param {Object} tokensData - Structured token data to commit
+ * @param {string} [commitDescription=''] - Custom commit message
+ * @param {Object} [prevData={}] - Previous token data for comparison
+ * @returns {Promise<void>} Sends PR URL and status to UI
+ * 
+ * @throws {Error} When GitHub API operations fail
+ * 
+ * @example
+ * await createGitHubPR(githubConfig, tokens, 'Color system update', previousTokens);
+ */
 async function createGitHubPR(config, tokensData, commitDescription = '', prevData = {}) {
   const { token, repo, owner } = config;
   const apiBase = 'https://api.github.com';
   
   try {
-    // Get main branch SHA
+    // Step 1: Get main branch SHA for creating new branch
     const branchResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/git/ref/heads/main`, {
       headers: {
         'Authorization': `token ${token}`,
@@ -199,13 +212,13 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
     });
     
     if (!branchResponse.ok) {
-      throw new Error(`Erro ao obter branch principal: ${branchResponse.statusText}`);
+      throw new Error(`Error getting main branch: ${branchResponse.statusText}`);
     }
     
     const branchData = await branchResponse.json();
     const mainSha = branchData.object.sha;
     
-    // Create new branch
+    // Step 2: Create new branch with unique timestamp
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const branchName = `figma-tokens-update-${timestamp}`;
     
@@ -223,14 +236,14 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
     });
     
     if (!createBranchResponse.ok) {
-      throw new Error(`Erro ao criar branch: ${createBranchResponse.statusText}`);
+      throw new Error(`Error creating branch: ${createBranchResponse.statusText}`);
     }
     
-    // Create or update file
+    // Step 3: Prepare file content and check if file exists
     const filePath = 'src/figma-output/selected-tokens.json';
     const fileContent = stringToBase64(JSON.stringify(tokensData, null, 2));
     
-    // Check if file exists to get SHA
+    // Check if file exists to get SHA (required for updates)
     let fileSha = null;
     try {
       const fileResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/contents/${filePath}?ref=${branchName}`, {
@@ -245,10 +258,11 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
         fileSha = fileData.sha;
       }
     } catch (e) {
-      // File doesn't exist, which is fine
+      // File doesn't exist, which is fine for new files
+      console.log('File does not exist yet, will create new file');
     }
     
-    // Create/update file
+    // Step 4: Create or update the file
     const commitMessage = commitDescription 
       ? commitDescription 
       : `Update Figma tokens - ${new Date().toLocaleString()}`;
@@ -259,6 +273,7 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
       branch: branchName
     };
     
+    // Include SHA only if file already exists
     if (fileSha) {
       updateFilePayload.sha = fileSha;
     }
@@ -274,10 +289,10 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
     });
     
     if (!updateFileResponse.ok) {
-      throw new Error(`Erro ao atualizar arquivo: ${updateFileResponse.statusText}`);
+      throw new Error(`Error updating file: ${updateFileResponse.statusText}`);
     }
     
-    // Create Pull Request
+    // Step 5: Create Pull Request with detailed description
     const prResponse = await fetch(`${apiBase}/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
       headers: {
@@ -294,157 +309,38 @@ async function createGitHubPR(config, tokensData, commitDescription = '', prevDa
     });
     
     if (!prResponse.ok) {
-      throw new Error(`Erro ao criar PR: ${prResponse.statusText}`);
+      throw new Error(`Error creating PR: ${prResponse.statusText}`);
     }
     
     const prData = await prResponse.json();
     
+    // Send success message to UI with PR URL
     figma.ui.postMessage({ 
       type: 'github-success', 
-      message: 'PR criado com sucesso!',
+      message: 'PR created successfully!',
       prUrl: prData.html_url
     });
     
   } catch (error) {
-    console.error('Erro na API do GitHub:', error);
+    console.error('GitHub API error:', error);
     figma.ui.postMessage({ 
       type: 'github-error', 
-      message: 'Erro na API do GitHub: ' + error.message 
+      message: 'GitHub API error: ' + error.message 
     });
   }
 }
 
-// Main export function to GitHub
-async function exportToGitHub(selectedCollectionIds, commitDescription = '') {
-  try {
-    // Load previous version for comparison BEFORE generating new data
-    const prevData = await figma.clientStorage.getAsync('previous-tokens-data') || {};
-
-    // Get GitHub configuration
-    const githubConfig = await figma.clientStorage.getAsync('github-config');
-    
-    if (!githubConfig || !githubConfig.token || !githubConfig.repo) {
-      figma.ui.postMessage({ 
-        type: 'github-error', 
-        message: 'Configuração do GitHub não encontrada. Configure primeiro.' 
-      });
-      return;
-    }
-
-    // Generate tokens data (imported from token-service)
-    const structuredTokens = await generateTokensData(selectedCollectionIds);
-
-    // Create GitHub PR with comparison
-    await createGitHubPR(githubConfig, structuredTokens, commitDescription, prevData);
-    
-    // Save current tokens as previous version for next comparison (only after successful PR creation)
-    await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
-    
-  } catch (error) {
-    console.error('Erro ao exportar para GitHub:', error);
-    figma.ui.postMessage({ 
-      type: 'github-error', 
-      message: 'Erro ao exportar para GitHub: ' + error.message 
-    });
-  }
-}
-
-// This function will be imported from token-service
-async function generateTokensData(selectedCollectionIds) {
-  const localVariables = await figma.variables.getLocalVariablesAsync();
-  const structuredTokens = {};
-  
-  for (const variable of localVariables) {
-    const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
-    
-    if (!selectedCollectionIds.includes(collection.id)) {
-      continue;
-    }
-    
-    const tokenValues = {};
-    const hasMultipleModes = collection.modes.length > 1;
-    
-    for (const modeId of collection.modes.map(mode => mode.modeId)) {
-      const mode = collection.modes.find(m => m.modeId === modeId);
-      const value = variable.valuesByMode[modeId];
-      
-      if (value !== undefined) {
-        if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-          const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-          tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
-        } else {
-          tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
-        }
-      }
-    }
-    
-    const collectionName = collection.name;
-    const tokenPath = parseTokenPath(variable.name);
-    
-    if (!structuredTokens[collectionName]) {
-      structuredTokens[collectionName] = {};
-    }
-    
-    const tokenData = {
-      value: tokenValues[collection.modes[0].name] || null,
-      type: "other"
-    };
-    
-    if (hasMultipleModes && Object.keys(tokenValues).length > 1) {
-      tokenData["$extensions"] = {
-        mode: tokenValues
-      };
-    }
-    
-    setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
-  }
-  
-  return structuredTokens;
-}
-
-// Helper functions (imported from token-service)
-function formatTokenValue(value, type) {
-  if (type === 'COLOR') {
-    if (typeof value === 'object' && value.r !== undefined) {
-      const r = Math.round(value.r * 255);
-      const g = Math.round(value.g * 255);
-      const b = Math.round(value.b * 255);
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
-    }
-  } else if (type === 'FLOAT') {
-    return `${value}px`;
-  } else if (type === 'STRING') {
-    return value;
-  }
-  
-  return value;
-}
-
-function parseTokenPath(tokenName) {
-  let path = tokenName.replace(/[\/-]/g, '.').split('.');
-  path = path.map(part => part.trim()).filter(part => part.length > 0);
-  return path;
-}
-
-function setNestedValue(obj, path, value) {
-  let current = obj;
-  
-  for (let i = 0; i < path.length - 1; i++) {
-    const key = path[i];
-    if (!current[key]) {
-      current[key] = {};
-    }
-    current = current[key];
-  }
-  
-  current[path[path.length - 1]] = value;
-}
-
-// Export functions to be used in code.js
+/**
+ * Module exports for Node.js compatibility
+ * 
+ * Exports GitHub service functions for use in other modules when running
+ * in a Node.js environment (primarily for testing purposes).
+ */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     loadGitHubConfig,
     saveGitHubConfig,
-    exportToGitHub
+    exportToGitHub,
+    createGitHubPR
   };
 }

@@ -1,6 +1,28 @@
-// Utility functions for Figma Token Exporter Plugin
+/**
+ * Utility Functions for Token Processing
+ * 
+ * This module contains essential utility functions used throughout the token export process.
+ * These functions handle data transformation, encoding, and object manipulation operations
+ * that are common across different parts of the plugin.
+ * 
+ * @module Utils
+ * @version 1.0.0
+ */
 
-// Helper function to encode string to base64
+/**
+ * Converts a string to Base64 encoding
+ * 
+ * This function implements a custom Base64 encoding algorithm that's compatible
+ * with the GitHub API requirements. It's used primarily for encoding file content
+ * when creating or updating files in GitHub repositories.
+ * 
+ * @param {string} str - The input string to encode
+ * @returns {string} The Base64 encoded string
+ * 
+ * @example
+ * const encoded = stringToBase64("Hello World");
+ * console.log(encoded); // "SGVsbG8gV29ybGQ="
+ */
 function stringToBase64(str) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   let result = '';
@@ -29,7 +51,27 @@ function stringToBase64(str) {
   return result;
 }
 
-// Helper function to format token values based on type
+/**
+ * Formats token values according to their data type
+ * 
+ * This function standardizes token values into their appropriate string representations
+ * based on the token type. It handles color conversion from RGB objects to hex,
+ * adds units to numeric values, and preserves string values as-is.
+ * 
+ * @param {*} value - The raw token value from Figma
+ * @param {string} type - The token type ('COLOR', 'FLOAT', 'STRING', etc.)
+ * @returns {string|*} The formatted token value
+ * 
+ * @example
+ * // Color formatting
+ * formatTokenValue({r: 1, g: 0, b: 0}, 'COLOR'); // "#FF0000"
+ * 
+ * // Numeric formatting with units
+ * formatTokenValue(16, 'FLOAT'); // "16px"
+ * 
+ * // String passthrough
+ * formatTokenValue("Inter", 'STRING'); // "Inter"
+ */
 function formatTokenValue(value, type) {
   if (type === 'COLOR') {
     if (typeof value === 'object' && value.r !== undefined) {
@@ -47,14 +89,43 @@ function formatTokenValue(value, type) {
   return value;
 }
 
-// Helper function to parse token path from name
+/**
+ * Parses a token name into a structured path array
+ * 
+ * This function converts Figma token names (which may use various separators like 
+ * forward slashes or hyphens) into a consistent dot-notation path structure.
+ * It's essential for creating properly nested token objects.
+ * 
+ * @param {string} tokenName - The raw token name from Figma (e.g., "colors/primary/500")
+ * @returns {string[]} An array representing the token's hierarchical path
+ * 
+ * @example
+ * parseTokenPath("colors/primary/500"); // ["colors", "primary", "500"]
+ * parseTokenPath("spacing-lg"); // ["spacing", "lg"]
+ * parseTokenPath("typography.heading.large"); // ["typography", "heading", "large"]
+ */
 function parseTokenPath(tokenName) {
   let path = tokenName.replace(/[\/-]/g, '.').split('.');
   path = path.map(part => part.trim()).filter(part => part.length > 0);
   return path;
 }
 
-// Helper function to set nested values in object
+/**
+ * Sets a nested object value using a path array
+ * 
+ * This function creates a nested object structure and sets a value at the specified path.
+ * It automatically creates intermediate objects if they don't exist, ensuring that
+ * deep token structures can be built without manual object creation.
+ * 
+ * @param {Object} obj - The target object to modify
+ * @param {string[]} path - Array representing the nested path
+ * @param {*} value - The value to set at the path location
+ * 
+ * @example
+ * const tokens = {};
+ * setNestedValue(tokens, ["colors", "primary", "500"], "#3B82F6");
+ * // Result: { colors: { primary: { "500": "#3B82F6" } } }
+ */
 function setNestedValue(obj, path, value) {
   let current = obj;
   
@@ -69,7 +140,12 @@ function setNestedValue(obj, path, value) {
   current[path[path.length - 1]] = value;
 }
 
-// Export functions for use in other modules
+/**
+ * Module exports for Node.js compatibility
+ * 
+ * Exports all utility functions for use in other modules when running
+ * in a Node.js environment (primarily for testing purposes).
+ */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     stringToBase64,
