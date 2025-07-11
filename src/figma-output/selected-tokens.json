@@ -115,7 +115,7 @@
       }
     }
   },
-  "globals": {
+  "Global": {
     "nature": {
       "brand": {
         "value": "{colors.green.500}",
@@ -177,7 +177,7 @@
       }
     }
   },
-  "semantics": {
+  "Semantics": {
     "background": {
       "default": {
         "value": "{colors.neutral.0}",
@@ -328,7 +328,7 @@
       }
     }
   },
-  "brand": {
+  "Brands": {
     "primary": {
       "value": "{tech.brand}",
       "type": "other",
