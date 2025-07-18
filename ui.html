@@ -197,6 +197,22 @@
     </div>
     
     <div class="export-section">
+      <h4>🎨 Criar Brand</h4>
+      <p>Crie uma nova brand com base nas collections selecionadas.</p>
+      <div id="brand-creation">
+        <input type="text" id="brand-name" placeholder="Nome da Brand (ex: MinhaEmpresa)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <input type="text" id="brand-description" placeholder="Descrição da brand (opcional)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <select id="brand-type" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+          <option value="complete">Brand Completa (todas as collections)</option>
+          <option value="colors">Apenas Cores</option>
+          <option value="typography">Apenas Tipografia</option>
+          <option value="spacing">Apenas Espaçamento</option>
+        </select>
+        <button id="create-brand-btn">Criar Brand</button>
+      </div>
+    </div>
+
+    <div class="export-section">
       <h4>⚙️ Configuração GitHub</h4>
       <p>Configure sua conta GitHub para criar PRs automaticamente.</p>
       <div id="github-config">
@@ -290,6 +306,15 @@
       
       if (msg && msg.type === 'github-error') {
         showStatus('Erro GitHub: ' + msg.message, 'error');
+      }
+      
+      if (msg && msg.type === 'brand-created') {
+        showStatus('Brand criada com sucesso! ✅', 'success');
+        createDownloadLink('brand-' + msg.brandName + '.json', msg.data, 'Baixar Brand JSON');
+      }
+      
+      if (msg && msg.type === 'brand-error') {
+        showStatus('Erro ao criar brand: ' + msg.message, 'error');
       }
       
       if (msg && msg.type === 'load-error' || msg && msg.type === 'export-error') {
@@ -443,6 +468,28 @@
           type: 'export-to-github', 
           selectedCollections: selectedIds,
           commitDescription: commitDescription
+        } 
+      }, '*');
+    };
+
+    // Create brand
+    document.getElementById('create-brand-btn').onclick = () => {
+      const brandName = document.getElementById('brand-name').value.trim();
+      const brandDescription = document.getElementById('brand-description').value.trim();
+      const brandType = document.getElementById('brand-type').value;
+      
+      if (!brandName) {
+        showStatus('Preencha o nome da brand!', 'error');
+        return;
+      }
+      
+      showStatus('Criando brand...', '');
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'create-brand',
+          brandName: brandName,
+          brandDescription: brandDescription,
+          brandType: brandType
         } 
       }, '*');
     };

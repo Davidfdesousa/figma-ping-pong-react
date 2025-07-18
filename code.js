@@ -530,6 +530,67 @@ ModuleLoader.define('app', [
     }
   }
 
+  async function createBrand(brandName, brandDescription, brandType) {
+    try {
+      const allCollections = await figma.variables.getLocalVariableCollectionsAsync();
+      let filteredCollections = allCollections;
+      
+      // Filter collections based on brand type
+      if (brandType !== 'complete') {
+        const typeMap = {
+          'colors': ['color', 'colours', 'cores'],
+          'typography': ['typography', 'font', 'text', 'tipografia'],
+          'spacing': ['spacing', 'space', 'espaçamento', 'margin', 'padding']
+        };
+        
+        const keywords = typeMap[brandType] || [];
+        filteredCollections = allCollections.filter(collection => 
+          keywords.some(keyword => 
+            collection.name.toLowerCase().includes(keyword)
+          )
+        );
+      }
+      
+      if (filteredCollections.length === 0) {
+        throw new Error('Nenhuma collection encontrada para o tipo selecionado');
+      }
+      
+      const collectionIds = filteredCollections.map(c => c.id);
+      const tokens = await tokenGeneration.generateTokensData(collectionIds);
+      
+      const brand = {
+        name: brandName,
+        description: brandDescription || `Brand ${brandName} criada automaticamente`,
+        type: brandType,
+        createdAt: new Date().toISOString(),
+        collections: filteredCollections.map(c => ({
+          id: c.id,
+          name: c.name,
+          variableCount: c.variableIds.length
+        })),
+        tokens: tokens,
+        metadata: {
+          figmaFileKey: figma.fileKey,
+          figmaFileName: figma.root.name,
+          totalTokens: Object.keys(tokens).length,
+          collectionsUsed: filteredCollections.length
+        }
+      };
+      
+      figma.ui.postMessage({
+        type: 'brand-created',
+        brandName: brandName,
+        data: brand
+      });
+    } catch (error) {
+      console.error('Error creating brand:', error);
+      figma.ui.postMessage({
+        type: 'brand-error',
+        message: error.message
+      });
+    }
+  }
+
   function handleMessage(msg) {
     console.log('📨 Message received:', msg);
     
@@ -548,6 +609,10 @@ ModuleLoader.define('app', [
         
       case 'export-selected-tokens':
         exportSelectedTokens(msg.selectedCollections);
+        break;
+        
+      case 'create-brand':
+        createBrand(msg.brandName, msg.brandDescription, msg.brandType);
         break;
         
       case 'save-github-config':
