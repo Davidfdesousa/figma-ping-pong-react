@@ -530,6 +530,84 @@ ModuleLoader.define('app', [
     }
   }
 
+  async function createBrandInFigma(brandName, baseBrandName) {
+    try {
+      console.log(`🎨 Creating brand in Figma: ${brandName} based on ${baseBrandName}`);
+      
+      // Get existing brand structure from base brand
+      const existingCollections = await figma.variables.getLocalVariableCollections();
+      const brandCollection = existingCollections.find(c => 
+        c.name.toLowerCase().includes(baseBrandName.toLowerCase())
+      );
+      
+      if (!brandCollection) {
+        throw new Error(`Base brand '${baseBrandName}' not found`);
+      }
+      
+      // Create new collection for the brand
+      const newCollection = figma.variables.createVariableCollection(brandName);
+      
+      // Get base brand variables to replicate structure
+      const baseVariables = brandCollection.variableIds.map(id => 
+        figma.variables.getVariableById(id)
+      ).filter(Boolean);
+      
+      const newVariables = {};
+      
+      // Create brand variables with same structure as base brand
+      for (const baseVar of baseVariables) {
+        const newVarName = baseVar.name.replace(baseBrandName.toLowerCase(), brandName.toLowerCase());
+        const newVariable = figma.variables.createVariable(newVarName, newCollection, baseVar.resolvedType);
+        
+        // Copy modes and values from base variable
+        for (const modeId of Object.keys(baseVar.valuesByMode)) {
+          const baseValue = baseVar.valuesByMode[modeId];
+          newVariable.setValueForMode(modeId, baseValue);
+        }
+        
+        newVariables[newVarName] = newVariable;
+      }
+      
+      // Generate tokens data for the new brand
+      const tokens = await tokenGeneration.generateTokensData([newCollection.id]);
+      
+      const brand = {
+        name: brandName,
+        description: `Brand ${brandName} created from ${baseBrandName}`,
+        type: 'complete',
+        createdAt: new Date().toISOString(),
+        baseBrand: baseBrandName,
+        collections: [{
+          id: newCollection.id,
+          name: newCollection.name,
+          variableCount: newCollection.variableIds.length
+        }],
+        tokens: tokens,
+        metadata: {
+          figmaFileKey: figma.fileKey,
+          figmaFileName: figma.root.name,
+          totalTokens: Object.keys(tokens).length,
+          collectionsUsed: 1,
+          createdFromBrand: baseBrandName
+        }
+      };
+      
+      figma.ui.postMessage({
+        type: 'brand-created-in-figma',
+        brandName: brandName,
+        data: brand,
+        variablesCreated: Object.keys(newVariables).length
+      });
+      
+    } catch (error) {
+      console.error('Error creating brand in Figma:', error);
+      figma.ui.postMessage({
+        type: 'brand-error',
+        message: error.message
+      });
+    }
+  }
+
   async function createBrand(brandName, brandDescription, brandType) {
     try {
       const allCollections = await figma.variables.getLocalVariableCollectionsAsync();
@@ -613,6 +691,10 @@ ModuleLoader.define('app', [
         
       case 'create-brand':
         createBrand(msg.brandName, msg.brandDescription, msg.brandType);
+        break;
+        
+      case 'create-brand-in-figma':
+        createBrandInFigma(msg.brandName, msg.baseBrandName);
         break;
         
       case 'save-github-config':

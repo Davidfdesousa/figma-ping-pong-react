@@ -197,7 +197,7 @@
     </div>
     
     <div class="export-section">
-      <h4>🎨 Criar Brand</h4>
+      <h4>🎨 Criar Brand (JSON)</h4>
       <p>Crie uma nova brand com base nas collections selecionadas.</p>
       <div id="brand-creation">
         <input type="text" id="brand-name" placeholder="Nome da Brand (ex: MinhaEmpresa)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
@@ -208,7 +208,17 @@
           <option value="typography">Apenas Tipografia</option>
           <option value="spacing">Apenas Espaçamento</option>
         </select>
-        <button id="create-brand-btn">Criar Brand</button>
+        <button id="create-brand-btn">Criar Brand JSON</button>
+      </div>
+    </div>
+
+    <div class="export-section">
+      <h4>🎯 Criar Brand no Figma</h4>
+      <p>Crie uma brand diretamente no Figma baseada em uma existente.</p>
+      <div id="figma-brand-creation">
+        <input type="text" id="figma-brand-name" placeholder="Nome da Nova Brand (ex: Luxury)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <input type="text" id="base-brand-name" placeholder="Brand Base (ex: tech)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <button id="create-figma-brand-btn">Criar Brand no Figma</button>
       </div>
     </div>
 
@@ -311,6 +321,11 @@
       if (msg && msg.type === 'brand-created') {
         showStatus('Brand criada com sucesso! ✅', 'success');
         createDownloadLink('brand-' + msg.brandName + '.json', msg.data, 'Baixar Brand JSON');
+      }
+      
+      if (msg && msg.type === 'brand-created-in-figma') {
+        showStatus(`Brand '${msg.brandName}' criada no Figma com ${msg.variablesCreated} variáveis! ✅`, 'success');
+        createDownloadLink('figma-brand-' + msg.brandName + '.json', msg.data, 'Baixar Brand Figma JSON');
       }
       
       if (msg && msg.type === 'brand-error') {
@@ -490,6 +505,26 @@
           brandName: brandName,
           brandDescription: brandDescription,
           brandType: brandType
+        } 
+      }, '*');
+    };
+
+    // Create brand in Figma
+    document.getElementById('create-figma-brand-btn').onclick = () => {
+      const brandName = document.getElementById('figma-brand-name').value.trim();
+      const baseBrandName = document.getElementById('base-brand-name').value.trim();
+      
+      if (!brandName || !baseBrandName) {
+        showStatus('Preencha o nome da nova brand e da brand base!', 'error');
+        return;
+      }
+      
+      showStatus('Criando brand no Figma...', '');
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'create-brand-in-figma',
+          brandName: brandName,
+          baseBrandName: baseBrandName
         } 
       }, '*');
     };
