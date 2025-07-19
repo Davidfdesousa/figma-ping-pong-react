@@ -202,10 +202,9 @@
       <div id="figma-brand-creation">
         <input type="text" id="figma-brand-name" placeholder="Nome da Nova Brand (ex: Luxury)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
         <select id="base-brand-dropdown" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px; background: white; z-index: 100;">
-          <option value="">Selecione uma brand base...</option>
+          <option value="">Carregando collections...</option>
         </select>
         <button id="create-figma-brand-btn">Criar Brand no Figma</button>
-        <button id="load-brands-btn" class="secondary" style="margin-top: 8px;">Carregar Brands Existentes</button>
       </div>
     </div>
 
@@ -486,12 +485,6 @@
       }, '*');
     };
 
-    // Load brands for dropdown
-    document.getElementById('load-brands-btn').onclick = () => {
-      showStatus('Carregando brands...', '');
-      parent.postMessage({ pluginMessage: { type: 'load-brands' } }, '*');
-    };
-
     // Create brand in Figma
     document.getElementById('create-figma-brand-btn').onclick = () => {
       const brandName = document.getElementById('figma-brand-name').value.trim();
@@ -517,6 +510,9 @@
       parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
     };
 
+    // Load brands automatically on startup
+    parent.postMessage({ pluginMessage: { type: 'load-brands' } }, '*');
+    
     // Load GitHub config on startup
     parent.postMessage({ pluginMessage: { type: 'load-github-config' } }, '*');
   </script>

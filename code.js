@@ -535,7 +535,14 @@ ModuleLoader.define('app', [
       console.log('🔍 Loading existing brands...');
       
       const existingCollections = await figma.variables.getLocalVariableCollections();
-      const brands = existingCollections.map(collection => ({
+      
+      // Filter for specific collections: Brands and Global
+      const targetCollections = existingCollections.filter(collection => 
+        collection.name.toLowerCase() === 'brands' || 
+        collection.name.toLowerCase() === 'global'
+      );
+      
+      const brands = targetCollections.map(collection => ({
         id: collection.id,
         name: collection.name,
         variableCount: collection.variableIds.length,
@@ -563,35 +570,66 @@ ModuleLoader.define('app', [
     try {
       console.log(`🎨 Creating brand in Figma: ${brandName} based on ${baseBrandName}`);
       
-      // Get existing brand structure from base brand
+      // Get existing collections (Brands and Global)
       const existingCollections = await figma.variables.getLocalVariableCollections();
-      const brandCollection = existingCollections.find(c => 
+      
+      // Find the base brand collection
+      const baseBrandCollection = existingCollections.find(c => 
         c.name.toLowerCase() === baseBrandName.toLowerCase()
       );
       
-      if (!brandCollection) {
-        throw new Error(`Base brand '${baseBrandName}' not found`);
+      if (!baseBrandCollection) {
+        throw new Error(`Base collection '${baseBrandName}' not found`);
       }
+      
+      // Get Global collection as well if it exists and is different from base
+      const globalCollection = existingCollections.find(c => 
+        c.name.toLowerCase() === 'global'
+      );
       
       // Create new collection for the brand
       const newCollection = figma.variables.createVariableCollection(brandName);
       
       // Get base brand variables to replicate structure
-      const baseVariables = brandCollection.variableIds.map(id => 
+      const baseVariables = baseBrandCollection.variableIds.map(id => 
         figma.variables.getVariableById(id)
       ).filter(Boolean);
+      
+      // Also get Global variables if Global collection exists and is different
+      let globalVariables = [];
+      if (globalCollection && globalCollection.id !== baseBrandCollection.id) {
+        globalVariables = globalCollection.variableIds.map(id => 
+          figma.variables.getVariableById(id)
+        ).filter(Boolean);
+      }
       
       const newVariables = {};
       
       // Create brand variables with same structure as base brand
       for (const baseVar of baseVariables) {
-        const newVarName = baseVar.name.replace(baseBrandName.toLowerCase(), brandName.toLowerCase());
+        const newVarName = baseVar.name.includes('/') 
+          ? baseVar.name.replace(/^[^\/]+\//, `${brandName}/`)
+          : `${brandName}/${baseVar.name}`;
         const newVariable = figma.variables.createVariable(newVarName, newCollection, baseVar.resolvedType);
         
         // Copy modes and values from base variable
         for (const modeId of Object.keys(baseVar.valuesByMode)) {
           const baseValue = baseVar.valuesByMode[modeId];
           newVariable.setValueForMode(modeId, baseValue);
+        }
+        
+        newVariables[newVarName] = newVariable;
+      }
+      
+      // Create global variables in the new collection if they exist
+      for (const globalVar of globalVariables) {
+        const newVarName = `${brandName}/${globalVar.name}`;
+        const newVariable = figma.variables.createVariable(newVarName, newCollection, globalVar.resolvedType);
+        
+        // Copy modes and values from global variable
+        for (const modeId of Object.keys(globalVar.valuesByMode)) {
+          const globalValue = globalVar.valuesByMode[modeId];
+          newVariable.setValueForMode(modeId, globalValue);
         }
         
         newVariables[newVarName] = newVariable;
