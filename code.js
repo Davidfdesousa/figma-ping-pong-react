@@ -532,25 +532,49 @@ ModuleLoader.define('app', [
 
   async function loadBrands() {
     try {
-      console.log('🔍 Loading existing brands...');
+      console.log('🔍 Loading existing brand groups...');
       
       const existingCollections = await figma.variables.getLocalVariableCollections();
       
-      // Filter for specific collections: Brands and Global
-      const targetCollections = existingCollections.filter(collection => 
-        collection.name.toLowerCase() === 'brands' || 
+      // Find Global collection
+      const globalCollection = existingCollections.find(collection => 
         collection.name.toLowerCase() === 'global'
       );
       
-      const brands = targetCollections.map(collection => ({
-        id: collection.id,
-        name: collection.name,
-        variableCount: collection.variableIds.length,
-        modes: collection.modes.map(mode => ({
-          id: mode.modeId,
-          name: mode.name
-        }))
-      }));
+      if (!globalCollection) {
+        throw new Error('Collection "Global" not found');
+      }
+      
+      // Get all variables from Global collection
+      const globalVariables = await Promise.all(
+        globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
+      );
+      
+      // Extract unique groups from variable names (e.g., "tech", "nature", "creative", "jupiter")
+      const groups = new Set();
+      globalVariables.forEach(variable => {
+        if (variable && variable.name.includes('/')) {
+          const groupName = variable.name.split('/')[0];
+          groups.add(groupName);
+        }
+      });
+      
+      // Convert to brands format for UI
+      const brands = Array.from(groups).map(groupName => {
+        const groupVariables = globalVariables.filter(v => 
+          v && v.name.toLowerCase().startsWith(groupName.toLowerCase() + '/')
+        );
+        
+        return {
+          id: groupName,
+          name: groupName,
+          variableCount: groupVariables.length,
+          modes: globalCollection.modes.map(mode => ({
+            id: mode.modeId,
+            name: mode.name
+          }))
+        };
+      });
       
       figma.ui.postMessage({
         type: 'brands-loaded',
@@ -570,93 +594,80 @@ ModuleLoader.define('app', [
     try {
       console.log(`🎨 Creating brand in Figma: ${brandName} based on ${baseBrandName}`);
       
-      // Get existing collections (Brands and Global)
+      // Get existing collections
       const existingCollections = await figma.variables.getLocalVariableCollections();
       
-      // Find Brands and Global collections
-      const brandsCollection = existingCollections.find(c => 
-        c.name.toLowerCase() === 'brands'
-      );
-      
+      // Find Global collection
       const globalCollection = existingCollections.find(c => 
         c.name.toLowerCase() === 'global'
       );
       
-      if (!brandsCollection && !globalCollection) {
-        throw new Error('Collections "Brands" and "Global" not found');
+      if (!globalCollection) {
+        throw new Error('Collection "Global" not found');
       }
       
-      // Create new collection for the brand
-      const newCollection = figma.variables.createVariableCollection(brandName);
+      // Get all variables from Global collection
+      const globalVariables = await Promise.all(
+        globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
+      );
       
-      // Get the default mode of the new collection
-      const defaultMode = newCollection.modes[0];
+      // Filter variables that belong to the base brand group (e.g., "tech/brand", "tech/brand-dark")
+      const baseGroupVariables = globalVariables.filter(variable => 
+        variable && variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')
+      );
       
-      // Get variables from both collections to replicate structure
-      const allVariables = [];
-      
-      if (brandsCollection) {
-        const brandsVariables = await Promise.all(
-          brandsCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
-        );
-        allVariables.push(...brandsVariables.filter(Boolean));
-      }
-      
-      if (globalCollection) {
-        const globalVariables = await Promise.all(
-          globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
-        );
-        allVariables.push(...globalVariables.filter(Boolean));
+      if (baseGroupVariables.length === 0) {
+        throw new Error(`No variables found for base group '${baseBrandName}' in Global collection`);
       }
       
       const newVariables = {};
       
-      // Create variables from both collections in the new brand collection
-      for (const sourceVar of allVariables) {
-        // Get the first available value from the source variable
-        const sourceModes = Object.keys(sourceVar.valuesByMode);
-        if (sourceModes.length === 0) continue;
+      // Create new variables by duplicating the base group structure
+      for (const baseVar of baseGroupVariables) {
+        // Replace the base brand name with the new brand name in variable path
+        const newVarName = baseVar.name.replace(
+          new RegExp(`^${baseBrandName}/`, 'i'), 
+          `${brandName}/`
+        );
         
-        const firstModeValue = sourceVar.valuesByMode[sourceModes[0]];
+        // Create new variable in the same Global collection
+        const newVariable = figma.variables.createVariable(newVarName, globalCollection, baseVar.resolvedType);
         
-        // Create variable name with brand prefix
-        const newVarName = sourceVar.name.includes('/') 
-          ? sourceVar.name.replace(/^[^\/]+\//, `${brandName}/`)
-          : `${brandName}/${sourceVar.name}`;
-          
-        const newVariable = figma.variables.createVariable(newVarName, newCollection, sourceVar.resolvedType);
-        
-        // Set value using the new collection's default mode
-        try {
-          newVariable.setValueForMode(defaultMode.modeId, firstModeValue);
-        } catch (error) {
-          console.warn(`Could not set value for variable ${newVarName}:`, error);
+        // Copy values from all modes of the base variable
+        for (const modeId of Object.keys(baseVar.valuesByMode)) {
+          const baseValue = baseVar.valuesByMode[modeId];
+          try {
+            newVariable.setValueForMode(modeId, baseValue);
+          } catch (error) {
+            console.warn(`Could not set value for variable ${newVarName}:`, error);
+          }
         }
         
         newVariables[newVarName] = newVariable;
       }
       
-      // Generate tokens data for the new brand
-      const tokens = await tokenGeneration.generateTokensData([newCollection.id]);
+      // Generate tokens data for the new brand group
+      const tokens = await tokenGeneration.generateTokensData([globalCollection.id]);
       
       const brand = {
         name: brandName,
-        description: `Brand ${brandName} created from ${baseBrandName}`,
+        description: `Brand group ${brandName} created from ${baseBrandName} in Global collection`,
         type: 'complete',
         createdAt: new Date().toISOString(),
         baseBrand: baseBrandName,
         collections: [{
-          id: newCollection.id,
-          name: newCollection.name,
-          variableCount: newCollection.variableIds.length
+          id: globalCollection.id,
+          name: globalCollection.name,
+          variableCount: globalCollection.variableIds.length
         }],
         tokens: tokens,
         metadata: {
           figmaFileKey: figma.fileKey,
           figmaFileName: figma.root.name,
-          totalTokens: Object.keys(tokens).length,
+          totalTokens: Object.keys(newVariables).length,
           collectionsUsed: 1,
-          createdFromBrand: baseBrandName
+          createdFromBrand: baseBrandName,
+          groupCreated: brandName
         }
       };
       
