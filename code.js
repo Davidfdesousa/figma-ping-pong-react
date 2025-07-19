@@ -530,6 +530,35 @@ ModuleLoader.define('app', [
     }
   }
 
+  async function loadBrands() {
+    try {
+      console.log('🔍 Loading existing brands...');
+      
+      const existingCollections = await figma.variables.getLocalVariableCollections();
+      const brands = existingCollections.map(collection => ({
+        id: collection.id,
+        name: collection.name,
+        variableCount: collection.variableIds.length,
+        modes: collection.modes.map(mode => ({
+          id: mode.modeId,
+          name: mode.name
+        }))
+      }));
+      
+      figma.ui.postMessage({
+        type: 'brands-loaded',
+        data: brands
+      });
+      
+    } catch (error) {
+      console.error('Error loading brands:', error);
+      figma.ui.postMessage({
+        type: 'load-error',
+        message: error.message
+      });
+    }
+  }
+
   async function createBrandInFigma(brandName, baseBrandName) {
     try {
       console.log(`🎨 Creating brand in Figma: ${brandName} based on ${baseBrandName}`);
@@ -537,7 +566,7 @@ ModuleLoader.define('app', [
       // Get existing brand structure from base brand
       const existingCollections = await figma.variables.getLocalVariableCollections();
       const brandCollection = existingCollections.find(c => 
-        c.name.toLowerCase().includes(baseBrandName.toLowerCase())
+        c.name.toLowerCase() === baseBrandName.toLowerCase()
       );
       
       if (!brandCollection) {
@@ -681,16 +710,16 @@ ModuleLoader.define('app', [
         githubConfig.loadGitHubConfig();
         break;
         
+      case 'load-brands':
+        loadBrands();
+        break;
+        
       case 'load-collections':
         collections.loadCollections();
         break;
         
       case 'export-selected-tokens':
         exportSelectedTokens(msg.selectedCollections);
-        break;
-        
-      case 'create-brand':
-        createBrand(msg.brandName, msg.brandDescription, msg.brandType);
         break;
         
       case 'create-brand-in-figma':

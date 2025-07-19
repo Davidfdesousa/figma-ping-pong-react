@@ -197,28 +197,15 @@
     </div>
     
     <div class="export-section">
-      <h4>🎨 Criar Brand (JSON)</h4>
-      <p>Crie uma nova brand com base nas collections selecionadas.</p>
-      <div id="brand-creation">
-        <input type="text" id="brand-name" placeholder="Nome da Brand (ex: MinhaEmpresa)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
-        <input type="text" id="brand-description" placeholder="Descrição da brand (opcional)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
-        <select id="brand-type" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
-          <option value="complete">Brand Completa (todas as collections)</option>
-          <option value="colors">Apenas Cores</option>
-          <option value="typography">Apenas Tipografia</option>
-          <option value="spacing">Apenas Espaçamento</option>
-        </select>
-        <button id="create-brand-btn">Criar Brand JSON</button>
-      </div>
-    </div>
-
-    <div class="export-section">
       <h4>🎯 Criar Brand no Figma</h4>
       <p>Crie uma brand diretamente no Figma baseada em uma existente.</p>
       <div id="figma-brand-creation">
         <input type="text" id="figma-brand-name" placeholder="Nome da Nova Brand (ex: Luxury)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
-        <input type="text" id="base-brand-name" placeholder="Brand Base (ex: tech)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
+        <select id="base-brand-dropdown" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px; background: white; z-index: 100;">
+          <option value="">Selecione uma brand base...</option>
+        </select>
         <button id="create-figma-brand-btn">Criar Brand no Figma</button>
+        <button id="load-brands-btn" class="secondary" style="margin-top: 8px;">Carregar Brands Existentes</button>
       </div>
     </div>
 
@@ -318,9 +305,9 @@
         showStatus('Erro GitHub: ' + msg.message, 'error');
       }
       
-      if (msg && msg.type === 'brand-created') {
-        showStatus('Brand criada com sucesso! ✅', 'success');
-        createDownloadLink('brand-' + msg.brandName + '.json', msg.data, 'Baixar Brand JSON');
+      if (msg && msg.type === 'brands-loaded') {
+        loadBrandsDropdown(msg.data);
+        showStatus('Brands carregadas! ✅', 'success');
       }
       
       if (msg && msg.type === 'brand-created-in-figma') {
@@ -412,6 +399,18 @@
       downloadArea.appendChild(link);
     }
 
+    function loadBrandsDropdown(brands) {
+      const dropdown = document.getElementById('base-brand-dropdown');
+      dropdown.innerHTML = '<option value="">Selecione uma brand base...</option>';
+      
+      brands.forEach(brand => {
+        const option = document.createElement('option');
+        option.value = brand.name;
+        option.textContent = `${brand.name} (${brand.variableCount} variáveis)`;
+        dropdown.appendChild(option);
+      });
+    }
+
     function loadGitHubConfigFields(config) {
       if (config.token) {
         document.getElementById('github-token').value = config.token;
@@ -487,35 +486,19 @@
       }, '*');
     };
 
-    // Create brand
-    document.getElementById('create-brand-btn').onclick = () => {
-      const brandName = document.getElementById('brand-name').value.trim();
-      const brandDescription = document.getElementById('brand-description').value.trim();
-      const brandType = document.getElementById('brand-type').value;
-      
-      if (!brandName) {
-        showStatus('Preencha o nome da brand!', 'error');
-        return;
-      }
-      
-      showStatus('Criando brand...', '');
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: 'create-brand',
-          brandName: brandName,
-          brandDescription: brandDescription,
-          brandType: brandType
-        } 
-      }, '*');
+    // Load brands for dropdown
+    document.getElementById('load-brands-btn').onclick = () => {
+      showStatus('Carregando brands...', '');
+      parent.postMessage({ pluginMessage: { type: 'load-brands' } }, '*');
     };
 
     // Create brand in Figma
     document.getElementById('create-figma-brand-btn').onclick = () => {
       const brandName = document.getElementById('figma-brand-name').value.trim();
-      const baseBrandName = document.getElementById('base-brand-name').value.trim();
+      const baseBrandName = document.getElementById('base-brand-dropdown').value;
       
       if (!brandName || !baseBrandName) {
-        showStatus('Preencha o nome da nova brand e da brand base!', 'error');
+        showStatus('Preencha o nome da nova brand e selecione uma brand base!', 'error');
         return;
       }
       
