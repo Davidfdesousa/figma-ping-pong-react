@@ -510,8 +510,9 @@
       parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
     };
 
-    // Load brands automatically on startup
+    // Load brands and collections automatically on startup
     parent.postMessage({ pluginMessage: { type: 'load-brands' } }, '*');
+    parent.postMessage({ pluginMessage: { type: 'load-collections' } }, '*');
     
     // Load GitHub config on startup
     parent.postMessage({ pluginMessage: { type: 'load-github-config' } }, '*');
