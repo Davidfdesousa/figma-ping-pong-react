@@ -625,18 +625,15 @@ ModuleLoader.define('app', [
         variable && variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')
       );
       
-      // Filter variables that belong to the base brand group in Brands (looking for similar structure)
-      const baseBrandsVariables = brandsVariables.filter(variable => 
-        variable && (
-          variable.name.toLowerCase().includes(baseBrandName.toLowerCase()) ||
-          variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/') ||
-          variable.name.toLowerCase().endsWith('/' + baseBrandName.toLowerCase())
-        )
-      );
+      // For Brands collection, we'll duplicate ALL variables (primary, primary-dark, accent, etc.)
+      // as they seem to represent the brand structure regardless of the specific brand
+      const baseBrandsVariables = brandsVariables.filter(variable => variable);
       
       if (baseGlobalVariables.length === 0) {
         throw new Error(`No variables found for base group '${baseBrandName}' in Global collection`);
       }
+      
+      console.log(`Found ${baseGlobalVariables.length} variables in Global and ${baseBrandsVariables.length} variables in Brands`);
       
       const newVariables = {};
       
@@ -666,21 +663,8 @@ ModuleLoader.define('app', [
       
       // Create new variables in Brands collection
       for (const baseVar of baseBrandsVariables) {
-        // Create appropriate name for Brands collection
-        let newVarName;
-        if (baseVar.name.includes('/')) {
-          // Replace the base brand name with new brand name
-          newVarName = baseVar.name.replace(
-            new RegExp(baseBrandName, 'gi'), 
-            brandName
-          );
-        } else {
-          // If no path structure, create one
-          newVarName = baseVar.name.replace(
-            new RegExp(baseBrandName, 'gi'), 
-            brandName
-          );
-        }
+        // Create variable name with brand suffix for Brands collection
+        const newVarName = `${baseVar.name}-${brandName}`;
         
         // Create new variable in the Brands collection
         const newVariable = figma.variables.createVariable(newVarName, brandsCollection, baseVar.resolvedType);
