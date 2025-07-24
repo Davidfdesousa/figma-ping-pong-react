@@ -63,7 +63,7 @@ const Utils = {
   },
 
   normalizeString(str) {
-    return str?.toString().trim().toLowerCase() || '';
+    return str ? str.toString().trim().toLowerCase() : '';
   }
 };
 
