@@ -208,7 +208,7 @@ const BrandManager = {
 
   async createBrandInFigma(brandName, baseBrandName) {
     try {
-      console.log(`🎨 Creating brand: ${brandName} based on ${baseBrandName}`);
+      console.log(`🎨 Creating/updating brand: ${brandName} based on ${baseBrandName}`);
       
       // Get collections
       const [globalCollection, brandsCollection] = await Promise.all([
@@ -218,15 +218,6 @@ const BrandManager = {
       
       if (!globalCollection || !brandsCollection) {
         throw new Error('Collections "Global" and "Brands" not found');
-      }
-
-      // Check mode limit (Figma allows max 4 modes per collection)
-      if (brandsCollection.modes.length >= 4) {
-        const existingModes = brandsCollection.modes.map(m => m.name).join(', ');
-        throw new Error(
-          `Cannot create new brand. Brands collection already has maximum 4 modes: ${existingModes}. ` +
-          `Please remove an existing mode first or update an existing brand instead.`
-        );
       }
       
       // Get variables
@@ -249,18 +240,34 @@ const BrandManager = {
       
       console.log(`Found base mode: ${baseBrandMode.name}`);
       
+      // Check if brand already exists (update mode) or create new mode
+      let targetBrandMode = brandsCollection.modes.find(mode => 
+        mode.name.toLowerCase() === brandName.toLowerCase()
+      );
+      
+      if (targetBrandMode) {
+        console.log(`Updating existing brand mode: ${brandName}`);
+      } else {
+        // Check mode limit only when creating new mode
+        if (brandsCollection.modes.length >= 4) {
+          const existingModes = brandsCollection.modes.map(m => m.name).join(', ');
+          throw new Error(
+            `Cannot create new brand. Brands collection already has maximum 4 modes: ${existingModes}. ` +
+            `Choose one of the existing modes to update: ${existingModes}`
+          );
+        }
+        targetBrandMode = brandsCollection.addMode(brandName);
+        console.log(`Created new brand mode: ${brandName}`);
+      }
+      
       // Create new variables in Global collection (create a brand-specific group)
       const newGlobalVariables = await this.createGlobalBrandVariables(
         globalCollection, globalVariables, brandName, baseBrandName
       );
       
-      // Create new mode in Brands collection
-      const newBrandMode = brandsCollection.addMode(brandName);
-      console.log(`Created new Brands mode: ${brandName}`);
-      
-      // Copy values from base brand mode to new brand mode
+      // Copy values from base brand mode to target brand mode
       const copiedBrandsVariables = await this.copyBrandModeValues(
-        brandsVariables, baseBrandMode, newBrandMode
+        brandsVariables, baseBrandMode, targetBrandMode
       );
       
       // Generate response data
