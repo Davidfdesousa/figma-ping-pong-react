@@ -532,47 +532,39 @@ ModuleLoader.define('app', [
 
   async function loadBrands() {
     try {
-      console.log('🔍 Loading existing brand groups...');
+      console.log('🔍 Loading existing brand modes from Brands collection...');
       
       const existingCollections = await figma.variables.getLocalVariableCollections();
       
-      // Find Global collection
-      const globalCollection = existingCollections.find(collection => 
-        collection.name.toLowerCase() === 'global'
+      // Find Brands collection
+      const brandsCollection = existingCollections.find(collection => 
+        collection.name.toLowerCase() === 'brands'
       );
       
-      if (!globalCollection) {
-        throw new Error('Collection "Global" not found');
+      if (!brandsCollection) {
+        throw new Error('Collection "Brands" not found');
       }
       
-      // Get all variables from Global collection
-      const globalVariables = await Promise.all(
-        globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
+      // Get all variables from Brands collection to count variables per mode
+      const brandsVariables = await Promise.all(
+        brandsCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
       );
       
-      // Extract unique groups from variable names (e.g., "tech", "nature", "creative", "jupiter")
-      const groups = new Set();
-      globalVariables.forEach(variable => {
-        if (variable && variable.name.includes('/')) {
-          const groupName = variable.name.split('/')[0];
-          groups.add(groupName);
-        }
-      });
-      
-      // Convert to brands format for UI
-      const brands = Array.from(groups).map(groupName => {
-        const groupVariables = globalVariables.filter(v => 
-          v && v.name.toLowerCase().startsWith(groupName.toLowerCase() + '/')
-        );
+      // Convert modes to brands format for UI
+      const brands = brandsCollection.modes.map(mode => {
+        // Count variables that have values in this mode
+        const variablesInMode = brandsVariables.filter(variable => 
+          variable && variable.valuesByMode[mode.modeId] !== undefined
+        ).length;
         
         return {
-          id: groupName,
-          name: groupName,
-          variableCount: groupVariables.length,
-          modes: globalCollection.modes.map(mode => ({
+          id: mode.name,
+          name: mode.name,
+          variableCount: variablesInMode,
+          modes: [{
             id: mode.modeId,
             name: mode.name
-          }))
+          }]
         };
       });
       
