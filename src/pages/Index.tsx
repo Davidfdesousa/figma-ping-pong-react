@@ -100,11 +100,21 @@ const Index = () => {
 
     setLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Send message to Figma plugin
+      parent.postMessage({
+        pluginMessage: {
+          type: 'create-brand-in-figma',
+          brandName: figmaBrandName,
+          baseBrandName: baseBrandName
+        }
+      }, '*');
+      
       toast({
-        title: "Brand criada!",
-        description: `Brand '${figmaBrandName}' foi criada com base em '${baseBrandName}'`,
+        title: "Criando brand...",
+        description: `Criando brand '${figmaBrandName}' baseada em '${baseBrandName}'`,
       });
+      
+      // Clear form
       setFigmaBrandName('');
       setBaseBrandName('');
     } catch (error) {
