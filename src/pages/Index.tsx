@@ -98,7 +98,8 @@ const Index = () => {
       return;
     }
 
-    console.log(`Creating brand "${figmaBrandName}" based on "${baseBrandName}"`);
+    console.log(`UI: Creating brand "${figmaBrandName}" based on "${baseBrandName}"`);
+    console.log(`UI: baseBrandName value is: "${baseBrandName}" (type: ${typeof baseBrandName})`);
     
     setLoading(true);
     try {
@@ -111,7 +112,7 @@ const Index = () => {
         }
       }, '*');
       
-      console.log(`Message sent to plugin:`, {
+      console.log(`UI: Message sent to plugin:`, {
         type: 'create-brand-in-figma',
         brandName: figmaBrandName,
         baseBrandName: baseBrandName
@@ -121,6 +122,11 @@ const Index = () => {
         title: "Criando brand...",
         description: `Criando brand '${figmaBrandName}' baseada em '${baseBrandName}'`,
       });
+      
+      // Recarregar collections após criar a marca
+      setTimeout(() => {
+        handleLoadCollections();
+      }, 2000);
       
       // Clear form
       setFigmaBrandName('');
@@ -137,44 +143,6 @@ const Index = () => {
     }
   };
 
-  const handleExportTokens = async () => {
-    if (selectedCollections.size === 0) {
-      toast({
-        title: "Erro",
-        description: "Selecione pelo menos uma collection!",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Simular download de arquivo
-      const mockData = { tokens: "mock data", collections: Array.from(selectedCollections) };
-      const blob = new Blob([JSON.stringify(mockData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'selected-tokens.json';
-      a.click();
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Tokens exportados!",
-        description: "Tokens foram exportados com sucesso.",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro",
-        description: "Erro ao exportar tokens.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleExportToGitHub = async () => {
     if (selectedCollections.size === 0) {
@@ -377,18 +345,13 @@ const Index = () => {
                   className="h-20"
                 />
 
-                <div className="flex gap-2">
-                  <Button onClick={handleExportTokens} disabled={loading} className="flex-1">
-                    {loading ? "Exportando..." : "Exportar para Download"}
-                  </Button>
-                  <Button 
-                    onClick={handleExportToGitHub} 
-                    disabled={loading} 
-                    className="flex-1 bg-green-600 hover:bg-green-700"
-                  >
-                    {loading ? "Exportando..." : "Exportar para GitHub"}
-                  </Button>
-                </div>
+                <Button 
+                  onClick={handleExportToGitHub} 
+                  disabled={loading} 
+                  className="w-full bg-green-600 hover:bg-green-700"
+                >
+                  {loading ? "Exportando..." : "Exportar para GitHub"}
+                </Button>
               </>
             )}
           </CardContent>

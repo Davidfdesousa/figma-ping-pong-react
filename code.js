@@ -232,8 +232,10 @@ const BrandManager = {
       
       // Find base brand mode
       const baseBrandMode = brandsCollection.modes.find(mode => {
-        console.log(`Comparing "${mode.name.toLowerCase()}" === "${baseBrandName.toLowerCase()}"`);
-        return mode.name.toLowerCase() === baseBrandName.toLowerCase();
+        const modeNameLower = mode.name.toLowerCase();
+        const baseBrandNameLower = baseBrandName.toLowerCase();
+        console.log(`Comparing mode "${mode.name}" (${modeNameLower}) with baseBrand "${baseBrandName}" (${baseBrandNameLower})`);
+        return modeNameLower === baseBrandNameLower;
       });
       
       if (!baseBrandMode) {
