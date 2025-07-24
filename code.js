@@ -602,6 +602,9 @@ ModuleLoader.define('app', [
         throw new Error('Collections "Global" and "Brands" not found');
       }
       
+      console.log(`Found Global collection: ${globalCollection.name}`);
+      console.log(`Found Brands collection: ${brandsCollection.name}`);
+      
       // Get all variables from Global collection
       const globalVariables = await Promise.all(
         globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
@@ -612,35 +615,63 @@ ModuleLoader.define('app', [
         brandsCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
       );
       
-      // Filter variables that belong to the base brand group in Global
-      const baseGlobalVariables = globalVariables.filter(variable => 
-        variable && variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')
-      );
-      
-      if (baseGlobalVariables.length === 0) {
-        throw new Error(`No variables found for base group '${baseBrandName}' in Global collection`);
-      }
-      
-      // Find the mode in Brands collection that corresponds to the base brand
+      // Find the base brand mode in Brands collection
       const baseBrandMode = brandsCollection.modes.find(mode => 
         mode.name.toLowerCase() === baseBrandName.toLowerCase()
       );
       
       if (!baseBrandMode) {
-        throw new Error(`Mode '${baseBrandName}' not found in Brands collection`);
+        throw new Error(`Mode '${baseBrandName}' not found in Brands collection. Available modes: ${brandsCollection.modes.map(m => m.name).join(', ')}`);
       }
       
-      console.log(`Found ${baseGlobalVariables.length} variables in Global and mode '${baseBrandMode.name}' in Brands`);
+      console.log(`Found base brand mode: ${baseBrandMode.name} (${baseBrandMode.modeId})`);
+      
+      // Look for variables in Global that have the baseBrandName in their path structure
+      // This could be variables like "tech/primary", "tech/secondary", etc.
+      const baseGlobalVariables = globalVariables.filter(variable => 
+        variable && (
+          variable.name.toLowerCase().includes(baseBrandName.toLowerCase()) ||
+          variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/') ||
+          variable.name.toLowerCase().includes('/' + baseBrandName.toLowerCase() + '/')
+        )
+      );
+      
+      console.log(`Found ${baseGlobalVariables.length} Global variables related to ${baseBrandName}`);
+      console.log(`Global variables found: ${baseGlobalVariables.map(v => v.name).join(', ')}`);
+      
+      if (baseGlobalVariables.length === 0) {
+        // Log all Global variables to help debug
+        const allGlobalVars = globalVariables.filter(v => v).map(v => v.name);
+        console.log(`All Global variables: ${allGlobalVars.join(', ')}`);
+        throw new Error(`No variables found related to '${baseBrandName}' in Global collection`);
+      }
       
       const newVariables = {};
       
       // Create new variables in Global collection
       for (const baseVar of baseGlobalVariables) {
-        // Replace the base brand name with the new brand name in variable path
-        const newVarName = baseVar.name.replace(
-          new RegExp(`^${baseBrandName}/`, 'i'), 
-          `${brandName}/`
-        );
+        // Create a new variable name by replacing the base brand name with the new brand name
+        let newVarName = baseVar.name;
+        
+        // Replace baseBrandName with brandName in the variable path
+        if (baseVar.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')) {
+          newVarName = baseVar.name.replace(
+            new RegExp(`^${baseBrandName}/`, 'i'), 
+            `${brandName}/`
+          );
+        } else if (baseVar.name.toLowerCase().includes('/' + baseBrandName.toLowerCase() + '/')) {
+          newVarName = baseVar.name.replace(
+            new RegExp(`/${baseBrandName}/`, 'gi'), 
+            `/${brandName}/`
+          );
+        } else if (baseVar.name.toLowerCase().includes(baseBrandName.toLowerCase())) {
+          newVarName = baseVar.name.replace(
+            new RegExp(baseBrandName, 'gi'), 
+            brandName
+          );
+        }
+        
+        console.log(`Creating Global variable: ${baseVar.name} -> ${newVarName}`);
         
         // Create new variable in the Global collection
         const newVariable = figma.variables.createVariable(newVarName, globalCollection, baseVar.resolvedType);
@@ -660,6 +691,7 @@ ModuleLoader.define('app', [
       
       // Create new mode in Brands collection for the new brand
       const newBrandMode = brandsCollection.addMode(brandName);
+      console.log(`Created new mode in Brands: ${brandName} (${newBrandMode.modeId})`);
       
       // Copy values from the base brand mode to the new brand mode for all variables in Brands collection
       for (const brandsVar of brandsVariables) {
@@ -667,6 +699,7 @@ ModuleLoader.define('app', [
           const baseValue = brandsVar.valuesByMode[baseBrandMode.modeId];
           try {
             brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
+            console.log(`Copied value for ${brandsVar.name} from mode ${baseBrandMode.name} to ${brandName}`);
           } catch (error) {
             console.warn(`Could not set value for variable ${brandsVar.name} in new mode ${brandName}:`, error);
           }
