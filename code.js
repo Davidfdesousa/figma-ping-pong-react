@@ -625,15 +625,20 @@ ModuleLoader.define('app', [
         variable && variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')
       );
       
-      // For Brands collection, we'll duplicate ALL variables (primary, primary-dark, accent, etc.)
-      // as they seem to represent the brand structure regardless of the specific brand
-      const baseBrandsVariables = brandsVariables.filter(variable => variable);
-      
       if (baseGlobalVariables.length === 0) {
         throw new Error(`No variables found for base group '${baseBrandName}' in Global collection`);
       }
       
-      console.log(`Found ${baseGlobalVariables.length} variables in Global and ${baseBrandsVariables.length} variables in Brands`);
+      // Find the mode in Brands collection that corresponds to the base brand
+      const baseBrandMode = brandsCollection.modes.find(mode => 
+        mode.name.toLowerCase() === baseBrandName.toLowerCase()
+      );
+      
+      if (!baseBrandMode) {
+        throw new Error(`Mode '${baseBrandName}' not found in Brands collection`);
+      }
+      
+      console.log(`Found ${baseGlobalVariables.length} variables in Global and mode '${baseBrandMode.name}' in Brands`);
       
       const newVariables = {};
       
@@ -661,25 +666,19 @@ ModuleLoader.define('app', [
         newVariables[`Global/${newVarName}`] = newVariable;
       }
       
-      // Create new variables in Brands collection
-      for (const baseVar of baseBrandsVariables) {
-        // Create variable name with brand suffix for Brands collection
-        const newVarName = `${baseVar.name}-${brandName}`;
-        
-        // Create new variable in the Brands collection
-        const newVariable = figma.variables.createVariable(newVarName, brandsCollection, baseVar.resolvedType);
-        
-        // Copy values from all modes of the base variable
-        for (const modeId of Object.keys(baseVar.valuesByMode)) {
-          const baseValue = baseVar.valuesByMode[modeId];
+      // Create new mode in Brands collection for the new brand
+      const newBrandMode = brandsCollection.addMode(brandName);
+      
+      // Copy values from the base brand mode to the new brand mode for all variables in Brands collection
+      for (const brandsVar of brandsVariables) {
+        if (brandsVar && brandsVar.valuesByMode[baseBrandMode.modeId] !== undefined) {
+          const baseValue = brandsVar.valuesByMode[baseBrandMode.modeId];
           try {
-            newVariable.setValueForMode(modeId, baseValue);
+            brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
           } catch (error) {
-            console.warn(`Could not set value for variable ${newVarName} in Brands:`, error);
+            console.warn(`Could not set value for variable ${brandsVar.name} in new mode ${brandName}:`, error);
           }
         }
-        
-        newVariables[`Brands/${newVarName}`] = newVariable;
       }
       
       // Generate tokens data for both collections
