@@ -1,6 +1,6 @@
 /**
- * Figma Token Exporter Plugin - Refactored & Optimized
- * @version 5.0.0
+ * Figma Token Exporter Plugin - Optimized & Fixed
+ * @version 6.0.0
  */
 
 // ============================================================================
@@ -48,7 +48,7 @@ const Utils = {
   },
 
   parseTokenPath(tokenName) {
-    let path = tokenName.replace(/[\/-]/g, '.').split('.');
+    const path = tokenName.replace(/[\/-]/g, '.').split('.');
     return path.map(part => part.trim()).filter(part => part.length > 0);
   },
 
@@ -60,6 +60,10 @@ const Utils = {
       current = current[key];
     }
     current[path[path.length - 1]] = value;
+  },
+
+  normalizeString(str) {
+    return str?.toString().trim().toLowerCase() || '';
   }
 };
 
@@ -70,7 +74,9 @@ const Utils = {
 const CollectionManager = {
   async loadCollections() {
     try {
+      console.log('🔄 Loading collections...');
       const collections = await figma.variables.getLocalVariableCollectionsAsync();
+      
       const collectionsData = collections.map(collection => ({
         id: collection.id,
         name: collection.name,
@@ -81,12 +87,13 @@ const CollectionManager = {
         }))
       }));
       
+      console.log(`✅ Loaded ${collectionsData.length} collections`);
       figma.ui.postMessage({ 
         type: 'collections-loaded', 
         data: collectionsData 
       });
     } catch (error) {
-      console.error('Error loading collections:', error);
+      console.error('❌ Error loading collections:', error);
       figma.ui.postMessage({ 
         type: 'load-error', 
         message: 'Error loading collections: ' + error.message 
@@ -95,14 +102,29 @@ const CollectionManager = {
   },
 
   async findCollectionByName(name) {
-    const collections = await figma.variables.getLocalVariableCollections();
-    return collections.find(c => c.name.toLowerCase() === name.toLowerCase());
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    const normalizedName = Utils.normalizeString(name);
+    return collections.find(c => Utils.normalizeString(c.name) === normalizedName);
   },
 
   async getVariablesFromCollection(collection) {
-    return Promise.all(
-      collection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
+    if (!collection || !collection.variableIds) {
+      console.warn('⚠️ Invalid collection provided');
+      return [];
+    }
+    
+    const variables = await Promise.all(
+      collection.variableIds.map(async id => {
+        try {
+          return await figma.variables.getVariableByIdAsync(id);
+        } catch (error) {
+          console.warn(`⚠️ Could not load variable ${id}:`, error);
+          return null;
+        }
+      })
     );
+    
+    return variables.filter(Boolean);
   }
 };
 
@@ -112,10 +134,18 @@ const CollectionManager = {
 
 const TokenGenerator = {
   async generateTokensData(selectedCollectionIds) {
+    if (!Array.isArray(selectedCollectionIds) || selectedCollectionIds.length === 0) {
+      throw new Error('No collections selected');
+    }
+
+    console.log('🎨 Generating tokens for collections:', selectedCollectionIds);
+    
     const localVariables = await figma.variables.getLocalVariablesAsync();
     const structuredTokens = {};
     
     for (const variable of localVariables) {
+      if (!variable || !variable.variableCollectionId) continue;
+      
       const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
       
       if (!selectedCollectionIds.includes(collection.id)) continue;
@@ -123,14 +153,18 @@ const TokenGenerator = {
       const tokenValues = {};
       const hasMultipleModes = collection.modes.length > 1;
       
-      for (const modeId of collection.modes.map(mode => mode.modeId)) {
-        const mode = collection.modes.find(m => m.modeId === modeId);
-        const value = variable.valuesByMode[modeId];
+      for (const mode of collection.modes) {
+        const value = variable.valuesByMode[mode.modeId];
         
         if (value !== undefined) {
           if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
-            const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
-            tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+            try {
+              const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
+              tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+            } catch (error) {
+              console.warn(`⚠️ Could not resolve alias for ${variable.name}:`, error);
+              tokenValues[mode.name] = null;
+            }
           } else {
             tokenValues[mode.name] = Utils.formatTokenValue(value, variable.resolvedType);
           }
@@ -156,6 +190,7 @@ const TokenGenerator = {
       Utils.setNestedValue(structuredTokens[collectionName], tokenPath, tokenData);
     }
     
+    console.log('✅ Tokens generation completed');
     return structuredTokens;
   }
 };
@@ -167,7 +202,7 @@ const TokenGenerator = {
 const BrandManager = {
   async loadBrands() {
     try {
-      console.log('🔍 Loading brands from Brands collection...');
+      console.log('🏷️ Loading brands from Brands collection...');
       
       const brandsCollection = await CollectionManager.findCollectionByName('brands');
       if (!brandsCollection) {
@@ -192,13 +227,15 @@ const BrandManager = {
         };
       });
       
+      console.log(`✅ Loaded ${brands.length} brands:`, brands.map(b => b.name));
+      
       figma.ui.postMessage({
         type: 'brands-loaded',
         data: brands
       });
       
     } catch (error) {
-      console.error('Error loading brands:', error);
+      console.error('❌ Error loading brands:', error);
       figma.ui.postMessage({
         type: 'load-error',
         message: error.message
@@ -208,8 +245,15 @@ const BrandManager = {
 
   async createBrandInFigma(brandName, baseBrandName) {
     try {
-      console.log(`🎨 Creating/updating brand: ${brandName} based on ${baseBrandName}`);
-      console.log(`Received parameters - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
+      console.log(`🎨 === BRAND CREATION START ===`);
+      console.log(`📝 Target brand: "${brandName}"`);
+      console.log(`📝 Base brand: "${baseBrandName}"`);
+      console.log(`📝 Parameters received - brandName type: ${typeof brandName}, baseBrandName type: ${typeof baseBrandName}`);
+      
+      // Validate inputs
+      if (!brandName || !baseBrandName) {
+        throw new Error(`Invalid parameters: brandName="${brandName}", baseBrandName="${baseBrandName}"`);
+      }
       
       // Get collections
       const [globalCollection, brandsCollection] = await Promise.all([
@@ -221,39 +265,54 @@ const BrandManager = {
         throw new Error('Collections "Global" and "Brands" not found');
       }
       
+      console.log(`📁 Collections found - Global: ${globalCollection.name}, Brands: ${brandsCollection.name}`);
+      
       // Get variables
       const [globalVariables, brandsVariables] = await Promise.all([
         CollectionManager.getVariablesFromCollection(globalCollection),
         CollectionManager.getVariablesFromCollection(brandsCollection)
       ]);
       
-      console.log(`Available modes in Brands collection:`, brandsCollection.modes.map(m => m.name));
-      console.log(`Looking for base brand mode: "${baseBrandName}"`);
+      console.log(`📊 Variables loaded - Global: ${globalVariables.length}, Brands: ${brandsVariables.length}`);
       
-      // Find base brand mode
-      const baseBrandMode = brandsCollection.modes.find(mode => {
-        const modeNameLower = mode.name.toLowerCase();
-        const baseBrandNameLower = baseBrandName.toLowerCase();
-        console.log(`Comparing mode "${mode.name}" (${modeNameLower}) with baseBrand "${baseBrandName}" (${baseBrandNameLower})`);
-        return modeNameLower === baseBrandNameLower;
-      });
+      // Find base brand mode with explicit debugging
+      const availableModes = brandsCollection.modes.map(m => m.name);
+      console.log(`🎯 Available modes in Brands collection:`, availableModes);
+      console.log(`🔍 Looking for base brand mode: "${baseBrandName}"`);
+      
+      const normalizedBaseBrandName = Utils.normalizeString(baseBrandName);
+      console.log(`🔍 Normalized base brand name: "${normalizedBaseBrandName}"`);
+      
+      let baseBrandMode = null;
+      for (const mode of brandsCollection.modes) {
+        const normalizedModeName = Utils.normalizeString(mode.name);
+        console.log(`🔍 Comparing mode "${mode.name}" (normalized: "${normalizedModeName}") with base "${baseBrandName}" (normalized: "${normalizedBaseBrandName}")`);
+        
+        if (normalizedModeName === normalizedBaseBrandName) {
+          baseBrandMode = mode;
+          console.log(`✅ MATCH FOUND! Using mode: ${mode.name}`);
+          break;
+        }
+      }
       
       if (!baseBrandMode) {
+        const availableModesStr = availableModes.join(', ');
         throw new Error(
           `Mode '${baseBrandName}' not found in Brands collection. ` +
-          `Available modes: ${brandsCollection.modes.map(m => m.name).join(', ')}`
+          `Available modes: ${availableModesStr}`
         );
       }
       
-      console.log(`Found base mode: ${baseBrandMode.name}`);
+      console.log(`🎯 Base mode confirmed: ${baseBrandMode.name} (ID: ${baseBrandMode.modeId})`);
       
       // Check if brand already exists (update mode) or create new mode
+      const normalizedBrandName = Utils.normalizeString(brandName);
       let targetBrandMode = brandsCollection.modes.find(mode => 
-        mode.name.toLowerCase() === brandName.toLowerCase()
+        Utils.normalizeString(mode.name) === normalizedBrandName
       );
       
       if (targetBrandMode) {
-        console.log(`Updating existing brand mode: ${brandName}`);
+        console.log(`🔄 Updating existing brand mode: ${brandName}`);
       } else {
         // Check mode limit only when creating new mode
         if (brandsCollection.modes.length >= 4) {
@@ -264,7 +323,7 @@ const BrandManager = {
           );
         }
         targetBrandMode = brandsCollection.addMode(brandName);
-        console.log(`Created new brand mode: ${brandName}`);
+        console.log(`✨ Created new brand mode: ${brandName} (ID: ${targetBrandMode.modeId})`);
       }
       
       // Create new variables in Global collection (create a brand-specific group)
@@ -313,6 +372,10 @@ const BrandManager = {
         }
       };
       
+      console.log(`🎉 === BRAND CREATION SUCCESS ===`);
+      console.log(`✅ Brand "${brandName}" created/updated successfully based on "${baseBrandName}"`);
+      console.log(`📊 Variables created: ${newGlobalVariables.length}, Variables copied: ${copiedBrandsVariables}`);
+      
       figma.ui.postMessage({
         type: 'brand-created-in-figma',
         brandName: brandName,
@@ -321,7 +384,8 @@ const BrandManager = {
       });
       
     } catch (error) {
-      console.error('Error creating brand:', error);
+      console.error('❌ === BRAND CREATION FAILED ===');
+      console.error('❌ Error creating brand:', error);
       figma.ui.postMessage({
         type: 'brand-error',
         message: error.message
@@ -330,6 +394,8 @@ const BrandManager = {
   },
 
   async createGlobalBrandVariables(globalCollection, globalVariables, brandName, baseBrandName) {
+    console.log(`🛠️ Creating Global brand variables for "${brandName}"`);
+    
     // Create brand-specific variants of common tokens
     const commonTokens = [
       'spacing/100', 'spacing/200', 'spacing/300',
@@ -342,38 +408,44 @@ const BrandManager = {
     // Find existing common tokens and create brand versions
     for (const tokenPath of commonTokens) {
       const existingVar = globalVariables.find(v => 
-        v && v.name.toLowerCase() === tokenPath.toLowerCase()
+        v && Utils.normalizeString(v.name) === Utils.normalizeString(tokenPath)
       );
       
       if (existingVar) {
         const newVarName = `${brandName.toLowerCase()}/${tokenPath}`;
-        console.log(`Creating Global variable: ${newVarName}`);
+        console.log(`🔧 Creating Global variable: ${newVarName}`);
         
-        const newVariable = figma.variables.createVariable(
-          newVarName, 
-          globalCollection, 
-          existingVar.resolvedType
-        );
-        
-        // Copy values from all modes
-        for (const modeId of Object.keys(existingVar.valuesByMode)) {
-          const baseValue = existingVar.valuesByMode[modeId];
-          try {
-            newVariable.setValueForMode(modeId, baseValue);
-          } catch (error) {
-            console.warn(`Could not set value for ${newVarName}:`, error);
+        try {
+          const newVariable = figma.variables.createVariable(
+            newVarName, 
+            globalCollection, 
+            existingVar.resolvedType
+          );
+          
+          // Copy values from all modes
+          for (const modeId of Object.keys(existingVar.valuesByMode)) {
+            const baseValue = existingVar.valuesByMode[modeId];
+            try {
+              newVariable.setValueForMode(modeId, baseValue);
+            } catch (error) {
+              console.warn(`⚠️ Could not set value for ${newVarName}:`, error);
+            }
           }
+          
+          newVariables.push(newVariable);
+        } catch (error) {
+          console.warn(`⚠️ Could not create variable ${newVarName}:`, error);
         }
-        
-        newVariables.push(newVariable);
       }
     }
     
-    console.log(`Created ${newVariables.length} new Global variables`);
+    console.log(`✅ Created ${newVariables.length} new Global variables`);
     return newVariables;
   },
 
   async copyBrandModeValues(brandsVariables, baseBrandMode, newBrandMode) {
+    console.log(`📋 Copying values from "${baseBrandMode.name}" to "${newBrandMode.name}"`);
+    
     let copiedCount = 0;
     
     for (const brandsVar of brandsVariables) {
@@ -383,12 +455,12 @@ const BrandManager = {
           brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
           copiedCount++;
         } catch (error) {
-          console.warn(`Could not copy value for ${brandsVar.name}:`, error);
+          console.warn(`⚠️ Could not copy value for ${brandsVar.name}:`, error);
         }
       }
     }
     
-    console.log(`Copied ${copiedCount} values to new Brands mode`);
+    console.log(`✅ Copied ${copiedCount} values to new Brands mode`);
     return copiedCount;
   }
 };
@@ -406,7 +478,7 @@ const GitHubManager = {
         data: config || {}
       });
     } catch (error) {
-      console.error('Error loading GitHub config:', error);
+      console.error('❌ Error loading GitHub config:', error);
       figma.ui.postMessage({ 
         type: 'github-config-loaded',
         data: {}
@@ -422,7 +494,7 @@ const GitHubManager = {
         message: 'GitHub configuration saved successfully!'
       });
     } catch (error) {
-      console.error('Error saving GitHub config:', error);
+      console.error('❌ Error saving GitHub config:', error);
       figma.ui.postMessage({ 
         type: 'github-error', 
         message: 'Error saving configuration: ' + error.message 
@@ -448,7 +520,7 @@ const GitHubManager = {
       await figma.clientStorage.setAsync('previous-tokens-data', structuredTokens);
       
     } catch (error) {
-      console.error('Error exporting to GitHub:', error);
+      console.error('❌ Error exporting to GitHub:', error);
       figma.ui.postMessage({ 
         type: 'github-error', 
         message: 'Error exporting to GitHub: ' + error.message 
@@ -566,25 +638,36 @@ const GitHubManager = {
 
 const MessageHandler = {
   async handle(msg) {
-    console.log('📨 Message received:', msg.type);
+    console.log(`📨 Message received: ${msg.type}`);
     
-    const handlers = {
-      'ping': () => figma.ui.postMessage({ type: 'pong' }),
-      'load-github-config': () => GitHubManager.loadConfig(),
-      'load-brands': () => BrandManager.loadBrands(),
-      'load-collections': () => CollectionManager.loadCollections(),
-      'export-selected-tokens': () => this.exportSelectedTokens(msg.selectedCollections),
-      'create-brand-in-figma': () => BrandManager.createBrandInFigma(msg.brandName, msg.baseBrandName),
-      'save-github-config': () => GitHubManager.saveConfig(msg.config),
-      'export-to-github': () => GitHubManager.exportToGitHub(msg.selectedCollections, msg.commitDescription),
-      'close': () => figma.closePlugin()
-    };
+    try {
+      const handlers = {
+        'ping': () => figma.ui.postMessage({ type: 'pong' }),
+        'load-github-config': () => GitHubManager.loadConfig(),
+        'load-brands': () => BrandManager.loadBrands(),
+        'load-collections': () => CollectionManager.loadCollections(),
+        'export-selected-tokens': () => this.exportSelectedTokens(msg.selectedCollections),
+        'create-brand-in-figma': () => {
+          console.log(`🎯 Handler received: brandName="${msg.brandName}", baseBrandName="${msg.baseBrandName}"`);
+          return BrandManager.createBrandInFigma(msg.brandName, msg.baseBrandName);
+        },
+        'save-github-config': () => GitHubManager.saveConfig(msg.config),
+        'export-to-github': () => GitHubManager.exportToGitHub(msg.selectedCollections, msg.commitDescription),
+        'close': () => figma.closePlugin()
+      };
 
-    const handler = handlers[msg.type];
-    if (handler) {
-      await handler();
-    } else {
-      console.warn('Unknown message type:', msg.type);
+      const handler = handlers[msg.type];
+      if (handler) {
+        await handler();
+      } else {
+        console.warn('⚠️ Unknown message type:', msg.type);
+      }
+    } catch (error) {
+      console.error(`❌ Error handling message ${msg.type}:`, error);
+      figma.ui.postMessage({
+        type: 'error',
+        message: `Error handling ${msg.type}: ${error.message}`
+      });
     }
   },
 
@@ -596,7 +679,7 @@ const MessageHandler = {
         data: structuredTokens 
       });
     } catch (error) {
-      console.error('Error exporting tokens:', error);
+      console.error('❌ Error exporting tokens:', error);
       figma.ui.postMessage({ 
         type: 'export-error', 
         message: 'Error exporting tokens: ' + error.message 
@@ -609,5 +692,21 @@ const MessageHandler = {
 // PLUGIN INITIALIZATION
 // ============================================================================
 
-figma.showUI(__html__, { width: 500, height: 800 });
-figma.ui.onmessage = (msg) => MessageHandler.handle(msg);
+figma.showUI(__html__, { 
+  width: 500, 
+  height: 600,
+  themeColors: true 
+});
+
+// Listen for messages from UI
+figma.ui.onmessage = (msg) => {
+  MessageHandler.handle(msg).catch(error => {
+    console.error('❌ Unhandled error in message handler:', error);
+    figma.ui.postMessage({
+      type: 'error',
+      message: `Unhandled error: ${error.message}`
+    });
+  });
+};
+
+console.log('🚀 Figma Token Exporter Plugin initialized successfully');
