@@ -238,13 +238,18 @@ const Index = () => {
               <SelectTrigger>
                 <SelectValue placeholder="Selecione uma brand base..." />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="" disabled>Carregando brands...</SelectItem>
-                {brands.map(brand => (
-                  <SelectItem key={brand.id} value={brand.name}>
-                    {brand.name} ({brand.variableCount} variáveis)
-                  </SelectItem>
-                ))}
+              <SelectContent className="bg-background border shadow-lg z-50">
+                {brands.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    Carregando brands...
+                  </div>
+                ) : (
+                  brands.map(brand => (
+                    <SelectItem key={brand.id} value={brand.name}>
+                      {brand.name} ({brand.variableCount} variáveis)
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             <div className="flex gap-2">
