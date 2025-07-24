@@ -219,6 +219,15 @@ const BrandManager = {
       if (!globalCollection || !brandsCollection) {
         throw new Error('Collections "Global" and "Brands" not found');
       }
+
+      // Check mode limit (Figma allows max 4 modes per collection)
+      if (brandsCollection.modes.length >= 4) {
+        const existingModes = brandsCollection.modes.map(m => m.name).join(', ');
+        throw new Error(
+          `Cannot create new brand. Brands collection already has maximum 4 modes: ${existingModes}. ` +
+          `Please remove an existing mode first or update an existing brand instead.`
+        );
+      }
       
       // Get variables
       const [globalVariables, brandsVariables] = await Promise.all([
