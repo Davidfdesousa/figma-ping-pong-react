@@ -602,9 +602,6 @@ ModuleLoader.define('app', [
         throw new Error('Collections "Global" and "Brands" not found');
       }
       
-      console.log(`Found Global collection: ${globalCollection.name}`);
-      console.log(`Found Brands collection: ${brandsCollection.name}`);
-      
       // Get all variables from Global collection
       const globalVariables = await Promise.all(
         globalCollection.variableIds.map(id => figma.variables.getVariableByIdAsync(id))
@@ -624,26 +621,37 @@ ModuleLoader.define('app', [
         throw new Error(`Mode '${baseBrandName}' not found in Brands collection. Available modes: ${brandsCollection.modes.map(m => m.name).join(', ')}`);
       }
       
-      console.log(`Found base brand mode: ${baseBrandMode.name} (${baseBrandMode.modeId})`);
+      // Log all Global variables to understand structure
+      const allGlobalVarNames = globalVariables.filter(v => v).map(v => v.name);
+      console.log(`All Global variables (${allGlobalVarNames.length}): ${allGlobalVarNames.join(', ')}`);
       
-      // Look for variables in Global that have the baseBrandName in their path structure
-      // This could be variables like "tech/primary", "tech/secondary", etc.
-      const baseGlobalVariables = globalVariables.filter(variable => 
-        variable && (
-          variable.name.toLowerCase().includes(baseBrandName.toLowerCase()) ||
-          variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/') ||
-          variable.name.toLowerCase().includes('/' + baseBrandName.toLowerCase() + '/')
-        )
+      // Try different patterns to find related variables in Global
+      let baseGlobalVariables = [];
+      
+      // Pattern 1: brand/something (e.g., tech/primary)
+      baseGlobalVariables = globalVariables.filter(variable => 
+        variable && variable.name.toLowerCase().startsWith(baseBrandName.toLowerCase() + '/')
       );
       
-      console.log(`Found ${baseGlobalVariables.length} Global variables related to ${baseBrandName}`);
-      console.log(`Global variables found: ${baseGlobalVariables.map(v => v.name).join(', ')}`);
+      if (baseGlobalVariables.length === 0) {
+        // Pattern 2: something/brand (e.g., color/tech)
+        baseGlobalVariables = globalVariables.filter(variable => 
+          variable && variable.name.toLowerCase().includes('/' + baseBrandName.toLowerCase())
+        );
+      }
       
       if (baseGlobalVariables.length === 0) {
-        // Log all Global variables to help debug
-        const allGlobalVars = globalVariables.filter(v => v).map(v => v.name);
-        console.log(`All Global variables: ${allGlobalVars.join(', ')}`);
-        throw new Error(`No variables found related to '${baseBrandName}' in Global collection`);
+        // Pattern 3: just contains the brand name anywhere
+        baseGlobalVariables = globalVariables.filter(variable => 
+          variable && variable.name.toLowerCase().includes(baseBrandName.toLowerCase())
+        );
+      }
+      
+      console.log(`Found ${baseGlobalVariables.length} Global variables for ${baseBrandName}`);
+      console.log(`Matching variables: ${baseGlobalVariables.map(v => v.name).join(', ')}`);
+      
+      if (baseGlobalVariables.length === 0) {
+        throw new Error(`No variables found related to '${baseBrandName}' in Global collection. Available variables: ${allGlobalVarNames.slice(0, 10).join(', ')}...`);
       }
       
       const newVariables = {};
