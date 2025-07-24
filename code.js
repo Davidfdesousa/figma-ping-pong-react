@@ -209,6 +209,7 @@ const BrandManager = {
   async createBrandInFigma(brandName, baseBrandName) {
     try {
       console.log(`🎨 Creating/updating brand: ${brandName} based on ${baseBrandName}`);
+      console.log(`Received parameters - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
       
       // Get collections
       const [globalCollection, brandsCollection] = await Promise.all([
@@ -226,10 +227,14 @@ const BrandManager = {
         CollectionManager.getVariablesFromCollection(brandsCollection)
       ]);
       
+      console.log(`Available modes in Brands collection:`, brandsCollection.modes.map(m => m.name));
+      console.log(`Looking for base brand mode: "${baseBrandName}"`);
+      
       // Find base brand mode
-      const baseBrandMode = brandsCollection.modes.find(mode => 
-        mode.name.toLowerCase() === baseBrandName.toLowerCase()
-      );
+      const baseBrandMode = brandsCollection.modes.find(mode => {
+        console.log(`Comparing "${mode.name.toLowerCase()}" === "${baseBrandName.toLowerCase()}"`);
+        return mode.name.toLowerCase() === baseBrandName.toLowerCase();
+      });
       
       if (!baseBrandMode) {
         throw new Error(

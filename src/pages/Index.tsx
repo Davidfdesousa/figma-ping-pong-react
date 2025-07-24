@@ -98,6 +98,8 @@ const Index = () => {
       return;
     }
 
+    console.log(`Creating brand "${figmaBrandName}" based on "${baseBrandName}"`);
+    
     setLoading(true);
     try {
       // Send message to Figma plugin
@@ -109,6 +111,12 @@ const Index = () => {
         }
       }, '*');
       
+      console.log(`Message sent to plugin:`, {
+        type: 'create-brand-in-figma',
+        brandName: figmaBrandName,
+        baseBrandName: baseBrandName
+      });
+      
       toast({
         title: "Criando brand...",
         description: `Criando brand '${figmaBrandName}' baseada em '${baseBrandName}'`,
@@ -118,6 +126,7 @@ const Index = () => {
       setFigmaBrandName('');
       setBaseBrandName('');
     } catch (error) {
+      console.error('Error creating brand:', error);
       toast({
         title: "Erro",
         description: "Erro ao criar brand no Figma.",
