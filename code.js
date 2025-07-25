@@ -98,7 +98,20 @@ class Utils {
   }
 
   static normalizeString(str) {
-    return str ? str.toString().trim().toLowerCase() : '';
+    if (!str) return '';
+    
+    // Convert to string, trim whitespace, convert to lowercase, and remove any invisible characters
+    const normalized = str.toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+      .replace(/\s+/g, ' '); // Normalize multiple spaces to single space
+      
+    // Only log during critical debugging phases
+    if (str !== normalized) {
+      Logger.debug(`String normalization: "${str}" -> "${normalized}"`);
+    }
+    return normalized;
   }
 
   static validateInputs(...inputs) {
@@ -410,32 +423,64 @@ class BrandManager {
 
   static async createBrandInFigma(brandName, baseBrandName) {
     try {
-      Logger.info(`Creating brand "${brandName}" from "${baseBrandName}"`);
+      Logger.info(`🚀 STARTING BRAND CREATION PROCESS`);
+      Logger.info(`📝 Raw parameters received:`);
+      Logger.info(`  - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName && brandName.length ? brandName.length : 'null'})`);
+      Logger.info(`  - baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, length: ${baseBrandName && baseBrandName.length ? baseBrandName.length : 'null'})`);
       
-      BrandManager._validateBrandInputs(brandName, baseBrandName);
+      // Critical parameter validation
+      if (!brandName || typeof brandName !== 'string' || brandName.trim() === '') {
+        throw new Error(`Invalid brandName parameter: "${brandName}"`);
+      }
+      
+      if (!baseBrandName || typeof baseBrandName !== 'string' || baseBrandName.trim() === '') {
+        throw new Error(`Invalid baseBrandName parameter: "${baseBrandName}"`);
+      }
+      
+      // Trim and clean parameters
+      const cleanBrandName = brandName.trim();
+      const cleanBaseBrandName = baseBrandName.trim();
+      
+      Logger.info(`✅ Cleaned parameters:`);
+      Logger.info(`  - cleanBrandName: "${cleanBrandName}"`);
+      Logger.info(`  - cleanBaseBrandName: "${cleanBaseBrandName}"`);
+      
+      BrandManager._validateBrandInputs(cleanBrandName, cleanBaseBrandName);
+      Logger.debug(`✅ Input validation passed`);
       
       const { globalCollection, brandsCollection } = await BrandManager._getRequiredCollections();
+      Logger.debug(`✅ Collections loaded - Global: "${globalCollection.name}", Brands: "${brandsCollection.name}"`);
+      
       const { brandsVariables } = await BrandManager._getCollectionVariables(globalCollection, brandsCollection);
+      Logger.debug(`✅ Variables loaded - ${brandsVariables.length} brand variables found`);
       
-      const baseBrandMode = BrandManager._findBaseBrandMode(brandsCollection, baseBrandName);
-      const targetBrandMode = await BrandManager._getOrCreateTargetBrandMode(brandsCollection, brandName);
+      Logger.info(`🔍 SEARCHING for base brand mode: "${cleanBaseBrandName}"`);
+      const baseBrandMode = BrandManager._findBaseBrandMode(brandsCollection, cleanBaseBrandName);
+      Logger.success(`✅ Base brand mode located: "${baseBrandMode.name}" (ID: ${baseBrandMode.modeId})`);
       
+      Logger.info(`🔍 CREATING/FINDING target brand mode: "${cleanBrandName}"`);
+      const targetBrandMode = await BrandManager._getOrCreateTargetBrandMode(brandsCollection, cleanBrandName);
+      Logger.success(`✅ Target brand mode ready: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
+      
+      Logger.info(`🔄 COPYING VALUES from "${baseBrandMode.name}" to "${targetBrandMode.name}"`);
       const copiedBrandsVariables = await BrandManager._copyBrandModeValues(brandsVariables, baseBrandMode, targetBrandMode);
       
-      const brandData = await BrandManager._generateBrandResponse(brandName, baseBrandName, globalCollection, brandsCollection, 0, copiedBrandsVariables);
+      const brandData = await BrandManager._generateBrandResponse(cleanBrandName, cleanBaseBrandName, globalCollection, brandsCollection, 0, copiedBrandsVariables);
       
-      Logger.success(`Brand "${brandName}" created/updated successfully`);
-      Logger.info(`Variables copied: ${copiedBrandsVariables} (no new variables created in Global)`);
+      Logger.success(`🎉 Brand "${cleanBrandName}" created/updated successfully from "${cleanBaseBrandName}"`);
+      Logger.info(`📊 Summary: ${copiedBrandsVariables} variables copied (no new variables created in Global)`);
       
       MessageService.postToUI({
         type: 'brand-created-in-figma',
-        brandName: brandName,
+        brandName: cleanBrandName,
         data: brandData,
         variablesCreated: copiedBrandsVariables
       });
       
     } catch (error) {
-      Logger.error('BRAND CREATION FAILED:', error);
+      Logger.error('❌ BRAND CREATION FAILED:', error);
+      Logger.error(`💥 Error details - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
+      Logger.error(`📋 Error stack:`, error.stack);
       MessageService.postToUI({
         type: 'brand-error',
         message: error.message
@@ -444,9 +489,21 @@ class BrandManager {
   }
 
   static _validateBrandInputs(brandName, baseBrandName) {
+    Logger.debug(`🔍 Validating brand inputs:`);
+    Logger.debug(`  - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName ? brandName.length : 'null'})`);
+    Logger.debug(`  - baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, length: ${baseBrandName ? baseBrandName.length : 'null'})`);
+    
     if (!Utils.validateInputs(brandName, baseBrandName)) {
+      Logger.error(`❌ Validation failed - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
       throw new Error(`Invalid parameters: brandName="${brandName}", baseBrandName="${baseBrandName}"`);
     }
+    
+    // Additional check for parameter confusion
+    if (brandName === baseBrandName) {
+      Logger.warning(`⚠️ Warning: brandName and baseBrandName are identical: "${brandName}"`);
+    }
+    
+    Logger.success(`✅ Input validation passed - creating "${brandName}" from "${baseBrandName}"`);
   }
 
   static async _getRequiredCollections() {
@@ -468,39 +525,165 @@ class BrandManager {
   }
 
   static _findBaseBrandMode(brandsCollection, baseBrandName) {
-    const normalizedBaseBrandName = Utils.normalizeString(baseBrandName);
-    Logger.debug(`Looking for base brand: "${baseBrandName}"`);
+    // Intensive debugging to catch the exact issue
+    Logger.info(`🔍 DEBUGGING _findBaseBrandMode:`);
+    Logger.info(`  📝 Input baseBrandName: "${baseBrandName}" (length: ${baseBrandName ? baseBrandName.length : 'null'})`);
+    Logger.info(`  📁 Collection has ${brandsCollection.modes.length} modes`);
     
-    const baseBrandMode = brandsCollection.modes.find(mode => 
-      Utils.normalizeString(mode.name) === normalizedBaseBrandName
-    );
+    const normalizedBaseBrandName = Utils.normalizeString(baseBrandName);
+    Logger.info(`  🎯 Normalized target: "${normalizedBaseBrandName}" (length: ${normalizedBaseBrandName.length})`);
+    
+    // Debug: Log all available modes with their normalized versions
+    Logger.info(`📋 Available modes analysis:`);
+    brandsCollection.modes.forEach((mode, index) => {
+      const normalizedModeName = Utils.normalizeString(mode.name);
+      const isExactMatch = normalizedModeName === normalizedBaseBrandName;
+      const isLooseMatch = mode.name.toLowerCase().includes(baseBrandName.toLowerCase());
+      
+      Logger.info(`  [${index}] "${mode.name}" -> "${normalizedModeName}"`);
+      Logger.info(`      Exact match: ${isExactMatch}`);
+      Logger.info(`      Loose match: ${isLooseMatch}`);
+      Logger.info(`      Mode ID: ${mode.modeId}`);
+    });
+    
+    // Find with detailed logging
+    const baseBrandMode = brandsCollection.modes.find((mode, index) => {
+      const normalizedModeName = Utils.normalizeString(mode.name);
+      const isMatch = normalizedModeName === normalizedBaseBrandName;
+      Logger.debug(`[${index}] Comparing "${mode.name}" (${normalizedModeName}) === "${baseBrandName}" (${normalizedBaseBrandName}): ${isMatch}`);
+      return isMatch;
+    });
     
     if (!baseBrandMode) {
       const availableModes = brandsCollection.modes.map(m => m.name);
+      Logger.error(`❌ CRITICAL: Base brand mode "${baseBrandName}" not found!`);
+      Logger.error(`📋 Available modes: ${availableModes.join(', ')}`);
+      Logger.error(`🔍 Normalized search term: "${normalizedBaseBrandName}"`);
+      
+      // Additional debugging: try to find potential matches
+      const potentialMatches = brandsCollection.modes.filter(mode => 
+        mode.name.toLowerCase().includes(baseBrandName.toLowerCase())
+      );
+      
+      if (potentialMatches.length > 0) {
+        Logger.error(`🤔 Potential matches found: ${potentialMatches.map(m => m.name).join(', ')}`);
+      }
+      
       throw new Error(
         `Mode '${baseBrandName}' not found in Brands collection. ` +
         `Available modes: ${availableModes.join(', ')}`
       );
     }
     
-    Logger.debug(`Base mode found: "${baseBrandMode.name}"`);
+    Logger.success(`✅ SUCCESS: Base mode found: "${baseBrandMode.name}" (ID: ${baseBrandMode.modeId})`);
     return baseBrandMode;
   }
 
   static async _getOrCreateTargetBrandMode(brandsCollection, brandName) {
+    Logger.info(`🔍 GETTING/CREATING target brand mode: "${brandName}"`);
+    Logger.debug(`📋 Input validation - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName && brandName.length ? brandName.length : 'null'})`);
+    
+    // Validate collection input
+    if (!brandsCollection) {
+      Logger.error(`❌ CRITICAL: brandsCollection is null/undefined`);
+      throw new Error('Brands collection is required');
+    }
+    
+    if (!brandsCollection.modes || !Array.isArray(brandsCollection.modes)) {
+      Logger.error(`❌ CRITICAL: brandsCollection.modes is invalid:`, brandsCollection.modes);
+      throw new Error('Brands collection modes array is invalid');
+    }
+    
+    if (typeof brandsCollection.addMode !== 'function') {
+      Logger.error(`❌ CRITICAL: brandsCollection.addMode is not a function:`, typeof brandsCollection.addMode);
+      throw new Error('Brands collection addMode method is not available');
+    }
+    
+    Logger.debug(`✅ Collection validation passed - ${brandsCollection.modes.length} existing modes`);
+    
+    if (!brandName || typeof brandName !== 'string' || brandName.trim() === '') {
+      Logger.error(`❌ CRITICAL: Invalid brandName: "${brandName}"`);
+      throw new Error(`Invalid brand name: "${brandName}"`);
+    }
+    
     const normalizedBrandName = Utils.normalizeString(brandName);
+    Logger.debug(`🎯 Normalized brand name: "${normalizedBrandName}"`);
+    
+    // Search for existing mode
     let targetBrandMode = brandsCollection.modes.find(mode => 
       Utils.normalizeString(mode.name) === normalizedBrandName
     );
     
     if (targetBrandMode) {
-      Logger.info(`Updating existing brand mode: ${brandName}`);
+      Logger.info(`♻️ Found existing brand mode: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
+      
+      // Validate existing mode
+      if (!targetBrandMode.modeId || !targetBrandMode.name) {
+        Logger.error(`❌ CRITICAL: Found mode is invalid:`, targetBrandMode);
+        throw new Error('Found existing brand mode is invalid');
+      }
     } else {
+      Logger.info(`🆕 Creating new brand mode: "${brandName}"`);
+      
+      // Validate mode limit before creating
       BrandManager._validateModeLimit(brandsCollection);
-      targetBrandMode = brandsCollection.addMode(brandName);
-      Logger.success(`Created new brand mode: ${brandName}`);
+      
+      try {
+        Logger.debug(`📞 Calling brandsCollection.addMode("${brandName}")...`);
+        
+        // Call addMode and capture the result
+        const result = brandsCollection.addMode(brandName);
+        Logger.debug(`📋 addMode returned:`, typeof result, result);
+        
+        // Check if result is a valid mode object
+        if (typeof result === 'object' && result !== null && result.modeId && result.name) {
+          targetBrandMode = result;
+          Logger.success(`✅ Successfully created new mode: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
+        } else {
+          Logger.error(`❌ addMode returned invalid result:`, result);
+          
+          // Try to find the newly created mode by name as fallback
+          Logger.info(`🔄 Attempting to find newly created mode by name...`);
+          targetBrandMode = brandsCollection.modes.find(mode => mode.name === brandName);
+          
+          if (targetBrandMode && targetBrandMode.modeId) {
+            Logger.success(`✅ Found newly created mode via fallback search: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
+          } else {
+            throw new Error(`Failed to create new brand mode "${brandName}": addMode returned invalid result and fallback search failed`);
+          }
+        }
+        
+      } catch (error) {
+        Logger.error(`❌ FAILED to create new mode:`, error);
+        throw new Error(`Failed to create new brand mode "${brandName}": ${error.message}`);
+      }
     }
     
+    // Final validation of the mode object
+    Logger.debug(`🔍 Final validation of targetBrandMode:`, targetBrandMode);
+    Logger.debug(`📋 Mode details: name="${targetBrandMode && targetBrandMode.name}", modeId="${targetBrandMode && targetBrandMode.modeId}", type="${typeof targetBrandMode}"`);
+    
+    if (!targetBrandMode) {
+      Logger.error(`❌ CRITICAL: targetBrandMode is null/undefined`);
+      throw new Error('Target brand mode is null or undefined after creation/retrieval');
+    }
+    
+    if (typeof targetBrandMode !== 'object') {
+      Logger.error(`❌ CRITICAL: targetBrandMode is not an object, it's: ${typeof targetBrandMode}`, targetBrandMode);
+      throw new Error(`Target brand mode is not an object, it's ${typeof targetBrandMode}: ${targetBrandMode}`);
+    }
+    
+    if (!targetBrandMode.modeId) {
+      Logger.error(`❌ CRITICAL: targetBrandMode.modeId is missing:`, targetBrandMode.modeId);
+      throw new Error('Target brand mode is missing modeId property');
+    }
+    
+    if (!targetBrandMode.name) {
+      Logger.error(`❌ CRITICAL: targetBrandMode.name is missing:`, targetBrandMode.name);
+      throw new Error('Target brand mode is missing name property');
+    }
+    
+    Logger.success(`✅ Target brand mode ready: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
     return targetBrandMode;
   }
 
@@ -515,23 +698,58 @@ class BrandManager {
   }
 
   static async _copyBrandModeValues(brandsVariables, baseBrandMode, newBrandMode) {
-    Logger.info(`Copying values from "${baseBrandMode.name}" to "${newBrandMode.name}"`);
+    Logger.info(`🔄 STARTING COPY OPERATION:`);
+    Logger.info(`  📤 Source: "${baseBrandMode && baseBrandMode.name ? baseBrandMode.name : 'undefined'}" (ID: ${baseBrandMode && baseBrandMode.modeId ? baseBrandMode.modeId : 'undefined'})`);
+    Logger.info(`  📥 Target: "${newBrandMode && newBrandMode.name ? newBrandMode.name : 'undefined'}" (ID: ${newBrandMode && newBrandMode.modeId ? newBrandMode.modeId : 'undefined'})`);
+    
+    // Critical validation before proceeding
+    if (!baseBrandMode || !baseBrandMode.modeId) {
+      Logger.error(`❌ CRITICAL ERROR: baseBrandMode is invalid:`, baseBrandMode);
+      throw new Error('Base brand mode is invalid or missing modeId');
+    }
+    
+    if (!newBrandMode || !newBrandMode.modeId) {
+      Logger.error(`❌ CRITICAL ERROR: newBrandMode is invalid:`, newBrandMode);
+      throw new Error('New brand mode is invalid or missing modeId');
+    }
+    
+    Logger.success(`✅ Mode validation passed - proceeding with copy operation`);
     
     let copiedCount = 0;
+    let totalVariables = 0;
+    let failedVariables = [];
     
     for (const brandsVar of brandsVariables) {
-      if (brandsVar && brandsVar.valuesByMode && brandsVar.valuesByMode[baseBrandMode.modeId] !== undefined) {
-        const baseValue = brandsVar.valuesByMode[baseBrandMode.modeId];
-        try {
-          brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
-          copiedCount++;
-        } catch (error) {
-          Logger.warning(`Could not copy value for ${brandsVar.name}:`, error);
+      if (brandsVar && brandsVar.valuesByMode) {
+        totalVariables++;
+        
+        if (brandsVar.valuesByMode[baseBrandMode.modeId] !== undefined) {
+          const baseValue = brandsVar.valuesByMode[baseBrandMode.modeId];
+          try {
+            // Additional validation before setting value
+            if (!newBrandMode.modeId) {
+              throw new Error(`Target mode ID is undefined for mode "${newBrandMode.name}"`);
+            }
+            
+            brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
+            copiedCount++;
+            Logger.debug(`✅ Successfully copied "${brandsVar.name}": ${JSON.stringify(baseValue)}`);
+          } catch (error) {
+            failedVariables.push(brandsVar.name);
+            Logger.error(`❌ FAILED copying "${brandsVar.name}":`, error);
+            Logger.error(`  📋 Details: baseModeId=${baseBrandMode.modeId}, targetModeId=${newBrandMode.modeId}`);
+          }
+        } else {
+          Logger.debug(`⚠️ Variable "${brandsVar.name}" has no value in base mode "${baseBrandMode.name}"`);
         }
       }
     }
     
-    Logger.success(`Copied ${copiedCount} values to new Brands mode`);
+    if (failedVariables.length > 0) {
+      Logger.error(`❌ Failed to copy ${failedVariables.length} variables: ${failedVariables.join(', ')}`);
+    }
+    
+    Logger.success(`✅ COPY OPERATION COMPLETED: ${copiedCount}/${totalVariables} values copied to "${newBrandMode.name}"`);
     return copiedCount;
   }
 
@@ -800,10 +1018,13 @@ class MessageHandler {
   }
 
   static _createCommand(msg) {
-    Logger.debug(`Processing message: ${msg.type}`);
+    Logger.debug(`🔍 Processing message: ${msg.type}`);
+    Logger.debug(`📋 Full message object:`, JSON.stringify(msg, null, 2));
     
     if (msg.type === MESSAGE_TYPES.CREATE_BRAND_IN_FIGMA) {
-      Logger.debug(`Brand creation: "${msg.brandName}" from "${msg.baseBrandName}"`);
+      Logger.debug(`🎯 Brand creation command detected:`);
+      Logger.debug(`  - brandName: "${msg.brandName}" (type: ${typeof msg.brandName})`);
+      Logger.debug(`  - baseBrandName: "${msg.baseBrandName}" (type: ${typeof msg.baseBrandName})`);
     }
     
     const commands = {
@@ -877,12 +1098,45 @@ class ExportSelectedTokensCommand extends Command {
 class CreateBrandInFigmaCommand extends Command {
   constructor(brandName, baseBrandName) {
     super();
+    
+    // Critical debugging for parameter passing
+    Logger.debug(`🔍 CONSTRUCTOR DEBUG:`);
+    Logger.debug(`  - Received brandName: "${brandName}" (type: ${typeof brandName}, is null: ${brandName === null}, is undefined: ${brandName === undefined})`);
+    Logger.debug(`  - Received baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, is null: ${baseBrandName === null}, is undefined: ${baseBrandName === undefined})`);
+    
     this.brandName = brandName;
     this.baseBrandName = baseBrandName;
+    
+    // Additional validation
+    if (this.brandName === undefined || this.brandName === null) {
+      Logger.error(`❌ CRITICAL: brandName is ${this.brandName} in constructor`);
+    }
+    
+    if (this.baseBrandName === undefined || this.baseBrandName === null) {
+      Logger.error(`❌ CRITICAL: baseBrandName is ${this.baseBrandName} in constructor`);
+    }
+    
+    Logger.debug(`📝 CreateBrandInFigmaCommand initialized with: brandName="${this.brandName}", baseBrandName="${this.baseBrandName}"`);
   }
 
   async execute() {
-    Logger.debug(`Creating brand: ${this.brandName} from ${this.baseBrandName}`);
+    Logger.debug(`🔥 COMMAND EXECUTION STARTING:`);
+    Logger.debug(`  - this.brandName: "${this.brandName}" (type: ${typeof this.brandName})`);
+    Logger.debug(`  - this.baseBrandName: "${this.baseBrandName}" (type: ${typeof this.baseBrandName})`);
+    
+    // Extra validation before calling BrandManager
+    if (!this.brandName || this.brandName === 'undefined' || typeof this.brandName !== 'string') {
+      Logger.error(`❌ CRITICAL ERROR: Invalid brandName in execute: "${this.brandName}"`);
+      throw new Error(`Invalid brandName: "${this.brandName}"`);
+    }
+    
+    if (!this.baseBrandName || this.baseBrandName === 'undefined' || typeof this.baseBrandName !== 'string') {
+      Logger.error(`❌ CRITICAL ERROR: Invalid baseBrandName in execute: "${this.baseBrandName}"`);
+      throw new Error(`Invalid baseBrandName: "${this.baseBrandName}"`);
+    }
+    
+    Logger.debug(`✅ Parameter validation passed in execute method`);
+    
     await BrandManager.createBrandInFigma(this.brandName, this.baseBrandName);
   }
 }
