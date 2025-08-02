@@ -10,7 +10,10 @@
 const CONSTANTS = {
   MAX_MODES_PER_COLLECTION: 4,
   GITHUB_API_BASE: 'https://api.github.com',
-  TARGET_FILE_PATH: 'src/figma-output/selected-tokens.json'
+  TARGET_FILE_PATH: 'src/figma-output/selected-tokens.json',
+  TOKENS_FOLDER_PATH: 'src/tokens',
+  FOUNDATION_CATEGORIES: ['primitives', 'spacing', 'sizing', 'stroke', 'corner', 'opacity', 'font', 'size'],
+  THEME_CATEGORIES: ['color', 'opacity', 'size', 'spacing', 'text']
 };
 
 const MESSAGE_TYPES = {
@@ -21,6 +24,9 @@ const MESSAGE_TYPES = {
   CREATE_BRAND_IN_FIGMA: 'create-brand-in-figma',
   SAVE_GITHUB_CONFIG: 'save-github-config',
   EXPORT_TO_GITHUB: 'export-to-github',
+  DOWNLOAD_TOKENS_ZIP: 'download-tokens-zip',
+  EXPORT_STRUCTURED_TOKENS: 'export-structured-tokens',
+  EXPORT_STRUCTURED_TOKENS_GITHUB: 'export-structured-tokens-github',
   CLOSE: 'close'
 };
 
@@ -58,8 +64,8 @@ class Utils {
 
   static formatTokenValue(value, type) {
     const formatters = {
-      COLOR: (val) => Utils._formatColorValue(val),
-      FLOAT: (val) => `${val}px`
+      COLOR: function(val) { return Utils._formatColorValue(val); },
+      FLOAT: function(val) { return val + 'px'; }
     };
 
     return formatters[type] ? formatters[type](value) : value;
@@ -72,14 +78,14 @@ class Utils {
     const g = Math.round(value.g * 255);
     const b = Math.round(value.b * 255);
     
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
+    return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
   }
 
   static parseTokenPath(tokenName) {
     if (!tokenName) return [];
     
     const path = tokenName.replace(/[\/-]/g, '.').split('.');
-    return path.map(part => part.trim()).filter(Boolean);
+    return path.map(function(part) { return part.trim(); }).filter(function(part) { return part.length > 0; });
   }
 
   static setNestedValue(obj, path, value) {
@@ -114,8 +120,10 @@ class Utils {
     return normalized;
   }
 
-  static validateInputs(...inputs) {
-    return inputs.every(input => input !== null && input !== undefined && input !== '');
+  static validateInputs() {
+    return Array.prototype.slice.call(arguments).every(function(input) {
+      return input !== null && input !== undefined && input !== '';
+    });
   }
 }
 
@@ -124,24 +132,29 @@ class Utils {
 // ============================================================================
 
 class Logger {
-  static info(message, ...args) {
-    console.log(`ℹ️ ${message}`, ...args);
+  static info(message) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    console.log.apply(console, ['ℹ️ ' + message].concat(args));
   }
 
-  static success(message, ...args) {
-    console.log(`✅ ${message}`, ...args);
+  static success(message) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    console.log.apply(console, ['✅ ' + message].concat(args));
   }
 
-  static warning(message, ...args) {
-    console.warn(`⚠️ ${message}`, ...args);
+  static warning(message) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    console.warn.apply(console, ['⚠️ ' + message].concat(args));
   }
 
-  static error(message, ...args) {
-    console.error(`❌ ${message}`, ...args);
+  static error(message) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    console.error.apply(console, ['❌ ' + message].concat(args));
   }
 
-  static debug(message, ...args) {
-    console.log(`🔍 ${message}`, ...args);
+  static debug(message) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    console.log.apply(console, ['🔍 ' + message].concat(args));
   }
 }
 
@@ -194,10 +207,10 @@ class FigmaApiService {
     }
 
     const variables = await Promise.all(
-      collection.variableIds.map(id => FigmaApiService.getVariableById(id))
+      collection.variableIds.map(function(id) { return FigmaApiService.getVariableById(id); })
     );
 
-    return variables.filter(Boolean);
+    return variables.filter(function(variable) { return variable !== null; });
   }
 }
 
@@ -210,15 +223,19 @@ class CollectionManager {
     try {
       const collections = await FigmaApiService.getLocalVariableCollections();
       
-      const collectionsData = collections.map(collection => ({
-        id: collection.id,
-        name: collection.name,
-        variableCount: collection.variableIds.length,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        }))
-      }));
+      const collectionsData = collections.map(function(collection) {
+        return {
+          id: collection.id,
+          name: collection.name,
+          variableCount: collection.variableIds.length,
+          modes: collection.modes.map(function(mode) {
+            return {
+              modeId: mode.modeId,
+              name: mode.name
+            };
+          })
+        };
+      });
       
       Logger.success(`Loaded ${collectionsData.length} collections`);
       
@@ -229,7 +246,7 @@ class CollectionManager {
       
       return collectionsData;
     } catch (error) {
-      const errorMessage = `Error loading collections: ${error.message}`;
+      const errorMessage = 'Error loading collections: ' + error.message;
       Logger.error(errorMessage);
       
       MessageService.postToUI({ 
@@ -247,7 +264,9 @@ class CollectionManager {
     const collections = await FigmaApiService.getLocalVariableCollections();
     const normalizedName = Utils.normalizeString(name);
     
-    return collections.find(c => Utils.normalizeString(c.name) === normalizedName);
+    return collections.find(function(c) { 
+      return Utils.normalizeString(c.name) === normalizedName; 
+    });
   }
 
   static async getVariablesFromCollection(collection) {
@@ -267,8 +286,245 @@ class MessageService {
   static createErrorMessage(type, error) {
     return {
       type: 'error',
-      message: `Error handling ${type}: ${error.message}`
+      message: 'Error handling ' + type + ': ' + error.message
     };
+  }
+}
+
+// ============================================================================
+// STRUCTURED TOKEN GENERATOR
+// ============================================================================
+
+class StructuredTokenGenerator {
+  /**
+   * Generates structured tokens organized by folders and files
+   * @param {Array} selectedCollectionIds - Array of collection IDs to process
+   * @returns {Object} Structured tokens data organized by category and theme
+   */
+  static async generateStructuredTokens(selectedCollectionIds) {
+    Logger.info('Generating structured tokens for collections:', selectedCollectionIds);
+    
+    const rawTokens = await TokenGenerator.generateTokensData(selectedCollectionIds);
+    const structuredData = StructuredTokenGenerator._organizeTokensByStructure(rawTokens);
+    
+    Logger.success('Structured tokens generation completed');
+    return structuredData;
+  }
+
+  /**
+   * Organizes raw tokens into foundation and themes structure
+   * @private
+   */
+  static _organizeTokensByStructure(rawTokens) {
+    const structure = {
+      foundation: {},
+      themes: {}
+    };
+
+    for (const [collectionName, tokens] of Object.entries(rawTokens)) {
+      if (StructuredTokenGenerator._isFoundationCollection(collectionName)) {
+        StructuredTokenGenerator._processFoundationTokens(tokens, structure.foundation);
+      } else {
+        StructuredTokenGenerator._processThemeTokens(tokens, collectionName, structure.themes);
+      }
+    }
+
+    return structure;
+  }
+
+  /**
+   * Determines if a collection belongs to foundation tokens
+   * @private
+   */
+  static _isFoundationCollection(collectionName) {
+    const foundationKeywords = ['global', 'foundation', 'primitive', 'base'];
+    const normalizedName = collectionName.toLowerCase();
+    return foundationKeywords.some(function(keyword) { 
+      return normalizedName.includes(keyword); 
+    });
+  }
+
+  /**
+   * Processes foundation tokens and categorizes them
+   * @private
+   */
+  static _processFoundationTokens(tokens, foundation) {
+    for (const [tokenName, tokenData] of Object.entries(tokens)) {
+      const category = StructuredTokenGenerator._categorizeFoundationToken(tokenName);
+      
+      if (!foundation[category]) {
+        foundation[category] = {};
+      }
+      
+      foundation[category][tokenName] = tokenData;
+    }
+  }
+
+  /**
+   * Processes theme tokens and organizes them by theme and category
+   * @private
+   */
+  static _processThemeTokens(tokens, collectionName, themes) {
+    const themeName = StructuredTokenGenerator._extractThemeName(collectionName);
+    
+    if (!themes[themeName]) {
+      themes[themeName] = {};
+    }
+
+    for (const [tokenName, tokenData] of Object.entries(tokens)) {
+      const category = StructuredTokenGenerator._categorizeThemeToken(tokenName, tokenData);
+      
+      if (!themes[themeName][category]) {
+        themes[themeName][category] = {};
+      }
+      
+      // Add theme information to token data
+      const enhancedTokenData = Object.assign({}, tokenData, {
+        theme: themeName
+      });
+      
+      themes[themeName][category][tokenName] = enhancedTokenData;
+    }
+  }
+
+  /**
+   * Categorizes foundation tokens based on their name and properties
+   * @private
+   */
+  static _categorizeFoundationToken(tokenName) {
+    const name = tokenName.toLowerCase();
+    
+    if (name.includes('spacing') || name.includes('gap') || name.includes('margin') || name.includes('padding')) {
+      return 'spacing';
+    }
+    if (name.includes('size') || name.includes('width') || name.includes('height')) {
+      return 'sizing';
+    }
+    if (name.includes('stroke') || name.includes('border')) {
+      return 'stroke';
+    }
+    if (name.includes('corner') || name.includes('radius')) {
+      return 'corner';
+    }
+    if (name.includes('opacity') || name.includes('alpha')) {
+      return 'opacity';
+    }
+    if (name.includes('font') || name.includes('typography')) {
+      return 'font';
+    }
+    
+    return 'primitives'; // Default category
+  }
+
+  /**
+   * Categorizes theme tokens based on their name and properties
+   * @private
+   */
+  static _categorizeThemeToken(tokenName, tokenData) {
+    const name = tokenName.toLowerCase();
+    
+    if (name.includes('color') || name.includes('bg') || name.includes('background') || name.includes('fg') || name.includes('foreground')) {
+      return 'color';
+    }
+    if (name.includes('opacity') || name.includes('alpha')) {
+      return 'opacity';
+    }
+    if (name.includes('size') || name.includes('scale')) {
+      return 'size';
+    }
+    if (name.includes('spacing') || name.includes('gap')) {
+      return 'spacing';
+    }
+    if (name.includes('text') || name.includes('font') || name.includes('typography')) {
+      return 'text';
+    }
+    
+    return 'color'; // Default to color for theme tokens
+  }
+
+  /**
+   * Extracts theme name from collection name
+   * @private
+   */
+  static _extractThemeName(collectionName) {
+    // Remove common prefixes/suffixes and normalize
+    const cleaned = collectionName
+      .toLowerCase()
+      .replace(/^(theme|brand|color|tokens?)\s*[-_]?\s*/i, '')
+      .replace(/\s*[-_]?\s*(theme|brand|color|tokens?)$/i, '')
+      .trim();
+    
+    return cleaned || collectionName.toLowerCase();
+  }
+
+  /**
+   * Converts structured tokens to file system structure
+   * @param {Object} structuredTokens - The organized token structure
+   * @returns {Object} File system structure with paths and content
+   */
+  static generateFileStructure(structuredTokens) {
+    const fileStructure = {};
+    
+    // Generate foundation files
+    if (structuredTokens.foundation) {
+      for (const [category, tokens] of Object.entries(structuredTokens.foundation)) {
+        const filePath = `${CONSTANTS.TOKENS_FOLDER_PATH}/foundation/${category}.json`;
+        fileStructure[filePath] = {
+          [category]: tokens
+        };
+      }
+    }
+    
+    // Generate theme files
+    if (structuredTokens.themes) {
+      for (const [themeName, themeData] of Object.entries(structuredTokens.themes)) {
+        for (const [category, tokens] of Object.entries(themeData)) {
+          const filePath = `${CONSTANTS.TOKENS_FOLDER_PATH}/themes/${themeName}/${category}.json`;
+          fileStructure[filePath] = {
+            [category]: tokens
+          };
+        }
+      }
+    }
+    
+    return fileStructure;
+  }
+}
+
+// ============================================================================
+// ZIP GENERATOR
+// ============================================================================
+
+class ZipGenerator {
+  /**
+   * Creates a ZIP file from the structured tokens
+   * @param {Object} fileStructure - File structure with paths and content
+   * @returns {Object} ZIP data for download
+   */
+  static async createTokensZip(fileStructure) {
+    Logger.info('Creating tokens ZIP file...');
+    
+    try {
+      // Since we're in a Figma plugin environment, we'll send the structure to UI
+      // for ZIP creation using client-side libraries
+      const zipData = {
+        type: 'tokens-zip-data',
+        files: {}
+      };
+      
+      for (const [filePath, content] of Object.entries(fileStructure)) {
+        // Remove the base path for the ZIP structure
+        const relativePath = filePath.replace(`${CONSTANTS.TOKENS_FOLDER_PATH}/`, '');
+        zipData.files[relativePath] = JSON.stringify(content, null, 2);
+      }
+      
+      Logger.success('ZIP data prepared for client-side generation');
+      return zipData;
+      
+    } catch (error) {
+      Logger.error('Error creating ZIP data:', error);
+      throw error;
+    }
   }
 }
 
@@ -337,9 +593,9 @@ class TokenGenerator {
   static async _resolveAlias(aliasValue, variableName) {
     try {
       const aliasedVariable = await FigmaApiService.getVariableById(aliasValue.id);
-      return `{${aliasedVariable.name.replace(/\//g, '.')}}`;
+      return '{' + aliasedVariable.name.replace(/\//g, '.') + '}';
     } catch (error) {
-      Logger.warning(`Could not resolve alias for ${variableName}:`, error);
+      Logger.warning('Could not resolve alias for ' + variableName + ':', error);
       return null;
     }
   }
@@ -540,25 +796,25 @@ class BrandManager {
       const isExactMatch = normalizedModeName === normalizedBaseBrandName;
       const isLooseMatch = mode.name.toLowerCase().includes(baseBrandName.toLowerCase());
       
-      Logger.info(`  [${index}] "${mode.name}" -> "${normalizedModeName}"`);
-      Logger.info(`      Exact match: ${isExactMatch}`);
-      Logger.info(`      Loose match: ${isLooseMatch}`);
-      Logger.info(`      Mode ID: ${mode.modeId}`);
+      Logger.info('  [' + index + '] "' + mode.name + '" -> "' + normalizedModeName + '"');
+      Logger.info('      Exact match: ' + isExactMatch);
+      Logger.info('      Loose match: ' + isLooseMatch);
+      Logger.info('      Mode ID: ' + mode.modeId);
     });
     
     // Find with detailed logging
     const baseBrandMode = brandsCollection.modes.find((mode, index) => {
       const normalizedModeName = Utils.normalizeString(mode.name);
       const isMatch = normalizedModeName === normalizedBaseBrandName;
-      Logger.debug(`[${index}] Comparing "${mode.name}" (${normalizedModeName}) === "${baseBrandName}" (${normalizedBaseBrandName}): ${isMatch}`);
+      Logger.debug('[' + index + '] Comparing "' + mode.name + '" (' + normalizedModeName + ') === "' + baseBrandName + '" (' + normalizedBaseBrandName + '): ' + isMatch);
       return isMatch;
     });
     
     if (!baseBrandMode) {
       const availableModes = brandsCollection.modes.map(m => m.name);
-      Logger.error(`❌ CRITICAL: Base brand mode "${baseBrandName}" not found!`);
-      Logger.error(`📋 Available modes: ${availableModes.join(', ')}`);
-      Logger.error(`🔍 Normalized search term: "${normalizedBaseBrandName}"`);
+      Logger.error('❌ CRITICAL: Base brand mode "' + baseBrandName + '" not found!');
+      Logger.error('📋 Available modes: ' + availableModes.join(', '));
+      Logger.error('🔍 Normalized search term: "' + normalizedBaseBrandName + '"');
       
       // Additional debugging: try to find potential matches
       const potentialMatches = brandsCollection.modes.filter(mode => 
@@ -566,16 +822,16 @@ class BrandManager {
       );
       
       if (potentialMatches.length > 0) {
-        Logger.error(`🤔 Potential matches found: ${potentialMatches.map(m => m.name).join(', ')}`);
+        Logger.error('🤔 Potential matches found: ' + potentialMatches.map(function(m) { return m.name; }).join(', '));
       }
       
       throw new Error(
-        `Mode '${baseBrandName}' not found in Brands collection. ` +
-        `Available modes: ${availableModes.join(', ')}`
+        'Mode \'' + baseBrandName + '\' not found in Brands collection. ' +
+        'Available modes: ' + availableModes.join(', ')
       );
     }
     
-    Logger.success(`✅ SUCCESS: Base mode found: "${baseBrandMode.name}" (ID: ${baseBrandMode.modeId})`);
+    Logger.success('✅ SUCCESS: Base mode found: "' + baseBrandMode.name + '" (ID: ' + baseBrandMode.modeId + ')');
     return baseBrandMode;
   }
 
@@ -654,8 +910,8 @@ class BrandManager {
         }
         
       } catch (error) {
-        Logger.error(`❌ FAILED to create new mode:`, error);
-        throw new Error(`Failed to create new brand mode "${brandName}": ${error.message}`);
+        Logger.error('❌ FAILED to create new mode:', error);
+        throw new Error('Failed to create new brand mode "' + brandName + '": ' + error.message);
       }
     }
     
@@ -669,8 +925,8 @@ class BrandManager {
     }
     
     if (typeof targetBrandMode !== 'object') {
-      Logger.error(`❌ CRITICAL: targetBrandMode is not an object, it's: ${typeof targetBrandMode}`, targetBrandMode);
-      throw new Error(`Target brand mode is not an object, it's ${typeof targetBrandMode}: ${targetBrandMode}`);
+      Logger.error('❌ CRITICAL: targetBrandMode is not an object, it\'s: ' + (typeof targetBrandMode), targetBrandMode);
+      throw new Error('Target brand mode is not an object, it\'s ' + (typeof targetBrandMode) + ': ' + targetBrandMode);
     }
     
     if (!targetBrandMode.modeId) {
@@ -733,11 +989,11 @@ class BrandManager {
             
             brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
             copiedCount++;
-            Logger.debug(`✅ Successfully copied "${brandsVar.name}": ${JSON.stringify(baseValue)}`);
+            Logger.debug('✅ Successfully copied "' + brandsVar.name + '": ' + JSON.stringify(baseValue));
           } catch (error) {
             failedVariables.push(brandsVar.name);
             Logger.error(`❌ FAILED copying "${brandsVar.name}":`, error);
-            Logger.error(`  📋 Details: baseModeId=${baseBrandMode.modeId}, targetModeId=${newBrandMode.modeId}`);
+            Logger.error('  📋 Details: baseModeId=' + baseBrandMode.modeId + ', targetModeId=' + newBrandMode.modeId);
           }
         } else {
           Logger.debug(`⚠️ Variable "${brandsVar.name}" has no value in base mode "${baseBrandMode.name}"`);
@@ -746,7 +1002,7 @@ class BrandManager {
     }
     
     if (failedVariables.length > 0) {
-      Logger.error(`❌ Failed to copy ${failedVariables.length} variables: ${failedVariables.join(', ')}`);
+      Logger.error('❌ Failed to copy ' + failedVariables.length + ' variables: ' + failedVariables.join(', '));
     }
     
     Logger.success(`✅ COPY OPERATION COMPLETED: ${copiedCount}/${totalVariables} values copied to "${newBrandMode.name}"`);
@@ -830,7 +1086,7 @@ class GitHubManager {
       Logger.error('Error saving GitHub config:', error);
       MessageService.postToUI({ 
         type: 'github-error', 
-        message: `Error saving configuration: ${error.message}`
+        message: 'Error saving configuration: ' + error.message
       });
       throw error;
     }
@@ -841,7 +1097,7 @@ class GitHubManager {
     const missingFields = requiredFields.filter(field => !config[field]);
     
     if (missingFields.length > 0) {
-      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      throw new Error('Missing required fields: ' + missingFields.join(', '));
     }
   }
 
@@ -862,7 +1118,29 @@ class GitHubManager {
       Logger.error('Error exporting to GitHub:', error);
       MessageService.postToUI({ 
         type: 'github-error', 
-        message: `Error exporting to GitHub: ${error.message}`
+        message: 'Error exporting to GitHub: ' + error.message
+      });
+      throw error;
+    }
+  }
+
+  static async exportStructuredToGitHub(selectedCollectionIds, commitDescription = '') {
+    try {
+      const githubConfig = await figma.clientStorage.getAsync('github-config');
+      GitHubManager._validateGitHubConfig(githubConfig);
+
+      const structuredTokens = await StructuredTokenGenerator.generateStructuredTokens(selectedCollectionIds);
+      const fileStructure = StructuredTokenGenerator.generateFileStructure(structuredTokens);
+      
+      await GitHubManager._createStructuredPR(githubConfig, fileStructure, commitDescription);
+      
+      Logger.success('Structured tokens exported to GitHub successfully');
+      
+    } catch (error) {
+      Logger.error('Error exporting structured tokens to GitHub:', error);
+      MessageService.postToUI({ 
+        type: 'github-error', 
+        message: 'Error exporting structured tokens to GitHub: ' + error.message
       });
       throw error;
     }
@@ -871,6 +1149,124 @@ class GitHubManager {
   static _validateGitHubConfig(githubConfig) {
     if (!githubConfig || !githubConfig.token || !githubConfig.repo || !githubConfig.owner) {
       throw new Error('GitHub configuration not found. Please configure first.');
+    }
+  }
+
+  static async _createStructuredPR(config, fileStructure, commitDescription) {
+    const { token, repo, owner } = config;
+    
+    Logger.info(`Creating structured PR with ${Object.keys(fileStructure).length} files`);
+    
+    const branchData = await GitHubManager._getMainBranch(token, owner, repo);
+    const branchName = GitHubManager._generateBranchName();
+    
+    await GitHubManager._createBranch(token, owner, repo, branchName, branchData.object.sha);
+    
+    // Create/update multiple files in a single commit
+    await GitHubManager._createMultiFileCommit(token, owner, repo, branchName, fileStructure, commitDescription);
+    
+    const prData = await GitHubManager._createPullRequest(token, owner, repo, branchName, commitDescription);
+    
+    MessageService.postToUI({ 
+      type: 'github-success', 
+      message: 'Structured tokens PR created successfully!',
+      prUrl: prData.html_url,
+      filesCreated: Object.keys(fileStructure).length
+    });
+  }
+
+  static async _createMultiFileCommit(token, owner, repo, branchName, fileStructure, commitDescription) {
+    Logger.info('Creating multi-file commit...');
+    
+    try {
+      // Get current branch reference
+      const branchRef = await GitHubManager._getBranchRef(token, owner, repo, branchName);
+      
+      // Get the current tree
+      const currentCommit = await GitHubManager._getCommit(token, owner, repo, branchRef.object.sha);
+      
+      // Create tree entries for all files
+      const treeEntries = [];
+      
+      for (const [filePath, content] of Object.entries(fileStructure)) {
+        const fileContent = Utils.stringToBase64(JSON.stringify(content, null, 2));
+        
+        // Create blob for each file
+        const blobResponse = await fetch(`${CONSTANTS.GITHUB_API_BASE}/repos/${owner}/${repo}/git/blobs`, {
+          method: 'POST',
+          headers: GitHubManager._getHeaders(token, true),
+          body: JSON.stringify({
+            content: fileContent,
+            encoding: 'base64'
+          })
+        });
+        
+        if (!blobResponse.ok) {
+          throw new Error('Error creating blob for ' + filePath + ': ' + blobResponse.statusText);
+        }
+        
+        const blobData = await blobResponse.json();
+        
+        treeEntries.push({
+          path: filePath,
+          mode: '100644',
+          type: 'blob',
+          sha: blobData.sha
+        });
+      }
+      
+      // Create new tree
+      const treeResponse = await fetch(`${CONSTANTS.GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees`, {
+        method: 'POST',
+        headers: GitHubManager._getHeaders(token, true),
+        body: JSON.stringify({
+          base_tree: currentCommit.tree.sha,
+          tree: treeEntries
+        })
+      });
+      
+      if (!treeResponse.ok) {
+        throw new Error('Error creating tree: ' + treeResponse.statusText);
+      }
+      
+      const treeData = await treeResponse.json();
+      
+      // Create commit
+      const commitMessage = commitDescription || ('Update Figma tokens structure - ' + new Date().toLocaleString());
+      const commitResponse = await fetch(`${CONSTANTS.GITHUB_API_BASE}/repos/${owner}/${repo}/git/commits`, {
+        method: 'POST',
+        headers: GitHubManager._getHeaders(token, true),
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: treeData.sha,
+          parents: [branchRef.object.sha]
+        })
+      });
+      
+      if (!commitResponse.ok) {
+        throw new Error('Error creating commit: ' + commitResponse.statusText);
+      }
+      
+      const commitData = await commitResponse.json();
+      
+      // Update branch reference
+      const updateRefResponse = await fetch(CONSTANTS.GITHUB_API_BASE + '/repos/' + owner + '/' + repo + '/git/refs/heads/' + branchName, {
+        method: 'PATCH',
+        headers: GitHubManager._getHeaders(token, true),
+        body: JSON.stringify({
+          sha: commitData.sha
+        })
+      });
+      
+      if (!updateRefResponse.ok) {
+        throw new Error('Error updating branch reference: ' + updateRefResponse.statusText);
+      }
+      
+      Logger.success(`Multi-file commit created successfully with ${treeEntries.length} files`);
+      
+    } catch (error) {
+      Logger.error('Error creating multi-file commit:', error);
+      throw error;
     }
   }
 
@@ -900,7 +1296,7 @@ class GitHubManager {
     });
     
     if (!response.ok) {
-      throw new Error(`Error getting main branch: ${response.statusText}`);
+      throw new Error('Error getting main branch: ' + response.statusText);
     }
     
     return await response.json();
@@ -908,7 +1304,7 @@ class GitHubManager {
 
   static _generateBranchName() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    return `figma-tokens-update-${timestamp}`;
+    return 'figma-tokens-update-' + timestamp;
   }
 
   static async _createBranch(token, owner, repo, branchName, sha) {
@@ -916,19 +1312,19 @@ class GitHubManager {
       method: 'POST',
       headers: GitHubManager._getHeaders(token, true),
       body: JSON.stringify({
-        ref: `refs/heads/${branchName}`,
+        ref: 'refs/heads/' + branchName,
         sha: sha
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Error creating branch: ${response.statusText}`);
+      throw new Error('Error creating branch: ' + response.statusText);
     }
   }
 
   static async _getFileSha(token, owner, repo, branchName) {
     try {
-      const response = await fetch(`${CONSTANTS.GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${CONSTANTS.TARGET_FILE_PATH}?ref=${branchName}`, {
+      const response = await fetch(CONSTANTS.GITHUB_API_BASE + '/repos/' + owner + '/' + repo + '/contents/' + CONSTANTS.TARGET_FILE_PATH + '?ref=' + branchName, {
         headers: GitHubManager._getHeaders(token)
       });
       
@@ -945,7 +1341,7 @@ class GitHubManager {
   }
 
   static async _updateFile(token, owner, repo, branchName, tokensData, commitDescription, fileSha) {
-    const commitMessage = commitDescription || `Update Figma tokens - ${new Date().toLocaleString()}`;
+    const commitMessage = commitDescription || ('Update Figma tokens - ' + new Date().toLocaleString());
     const fileContent = Utils.stringToBase64(JSON.stringify(tokensData, null, 2));
     
     const updateFilePayload = {
@@ -956,14 +1352,14 @@ class GitHubManager {
     
     if (fileSha) updateFilePayload.sha = fileSha;
     
-    const response = await fetch(`${CONSTANTS.GITHUB_API_BASE}/repos/${owner}/${repo}/contents/${CONSTANTS.TARGET_FILE_PATH}`, {
+    const response = await fetch(CONSTANTS.GITHUB_API_BASE + '/repos/' + owner + '/' + repo + '/contents/' + CONSTANTS.TARGET_FILE_PATH, {
       method: 'PUT',
       headers: GitHubManager._getHeaders(token, true),
       body: JSON.stringify(updateFilePayload)
     });
 
     if (!response.ok) {
-      throw new Error(`Error updating file: ${response.statusText}`);
+      throw new Error('Error updating file: ' + response.statusText);
     }
   }
 
@@ -980,7 +1376,7 @@ class GitHubManager {
     });
     
     if (!response.ok) {
-      throw new Error(`Error creating PR: ${response.statusText}`);
+      throw new Error('Error creating PR: ' + response.statusText);
     }
     
     return await response.json();
@@ -988,7 +1384,7 @@ class GitHubManager {
 
   static _getHeaders(token, includeContentType = false) {
     const headers = {
-      'Authorization': `token ${token}`,
+      'Authorization': 'token ' + token,
       'Accept': 'application/vnd.github.v3+json'
     };
 
@@ -1006,7 +1402,7 @@ class GitHubManager {
 
 class MessageHandler {
   static async handle(msg) {
-    Logger.info(`Message received: ${msg.type}`);
+    Logger.info('Message received: ' + msg.type);
     
     try {
       const command = MessageHandler._createCommand(msg);
@@ -1018,7 +1414,7 @@ class MessageHandler {
   }
 
   static _createCommand(msg) {
-    Logger.debug(`🔍 Processing message: ${msg.type}`);
+    Logger.debug('🔍 Processing message: ' + msg.type);
     Logger.debug(`📋 Full message object:`, JSON.stringify(msg, null, 2));
     
     if (msg.type === MESSAGE_TYPES.CREATE_BRAND_IN_FIGMA) {
@@ -1035,13 +1431,16 @@ class MessageHandler {
       [MESSAGE_TYPES.CREATE_BRAND_IN_FIGMA]: () => new CreateBrandInFigmaCommand(msg.brandName, msg.baseBrandName),
       [MESSAGE_TYPES.SAVE_GITHUB_CONFIG]: () => new SaveGitHubConfigCommand(msg.config),
       [MESSAGE_TYPES.EXPORT_TO_GITHUB]: () => new ExportToGitHubCommand(msg.selectedCollections, msg.commitDescription),
+      [MESSAGE_TYPES.DOWNLOAD_TOKENS_ZIP]: () => new DownloadTokensZipCommand(msg.selectedCollections),
+      [MESSAGE_TYPES.EXPORT_STRUCTURED_TOKENS]: () => new ExportStructuredTokensCommand(msg.selectedCollections),
+      [MESSAGE_TYPES.EXPORT_STRUCTURED_TOKENS_GITHUB]: () => new ExportStructuredTokensToGitHubCommand(msg.selectedCollections, msg.commitDescription),
       [MESSAGE_TYPES.CLOSE]: () => new ClosePluginCommand()
     };
 
     const commandFactory = commands[msg.type];
     if (!commandFactory) {
       Logger.warning('Unknown message type:', msg.type);
-      throw new Error(`Unknown message type: ${msg.type}`);
+      throw new Error('Unknown message type: ' + msg.type);
     }
 
     return commandFactory();
@@ -1160,7 +1559,102 @@ class ExportToGitHubCommand extends Command {
   }
 
   async execute() {
-    await GitHubManager.exportToGitHub(this.selectedCollections, this.commitDescription);
+    await GitHubManager.exportStructuredToGitHub(this.selectedCollections, this.commitDescription);
+  }
+}
+
+class DownloadTokensZipCommand extends Command {
+  constructor(selectedCollections) {
+    super();
+    this.selectedCollections = selectedCollections;
+  }
+
+  async execute() {
+    try {
+      Logger.info('Preparing tokens ZIP download...');
+      
+      const structuredTokens = await StructuredTokenGenerator.generateStructuredTokens(this.selectedCollections);
+      const fileStructure = StructuredTokenGenerator.generateFileStructure(structuredTokens);
+      const zipData = await ZipGenerator.createTokensZip(fileStructure);
+      
+      MessageService.postToUI({
+        type: 'download-tokens-zip',
+        data: zipData
+      });
+      
+      Logger.success('ZIP download data sent to UI');
+      
+    } catch (error) {
+      Logger.error('Error preparing ZIP download:', error);
+      MessageService.postToUI({
+        type: 'zip-error',
+        message: 'Error preparing ZIP download: ' + error.message
+      });
+    }
+  }
+}
+
+class ExportStructuredTokensCommand extends Command {
+  constructor(selectedCollections) {
+    super();
+    this.selectedCollections = selectedCollections;
+  }
+
+  async execute() {
+    try {
+      Logger.info('Exporting structured tokens...');
+      
+      const structuredTokens = await StructuredTokenGenerator.generateStructuredTokens(this.selectedCollections);
+      const fileStructure = StructuredTokenGenerator.generateFileStructure(structuredTokens);
+      
+      MessageService.postToUI({
+        type: 'structured-tokens-exported',
+        data: {
+          structure: structuredTokens,
+          files: fileStructure
+        }
+      });
+      
+      Logger.success('Structured tokens exported successfully');
+      
+    } catch (error) {
+      Logger.error('Error exporting structured tokens:', error);
+      MessageService.postToUI({
+        type: 'export-error',
+        message: 'Error exporting structured tokens: ' + error.message
+      });
+    }
+  }
+}
+
+class ExportStructuredTokensToGitHubCommand extends Command {
+  constructor(selectedCollections, commitDescription) {
+    super();
+    this.selectedCollections = selectedCollections;
+    this.commitDescription = commitDescription;
+  }
+
+  async execute() {
+    try {
+      Logger.info('Exporting structured tokens to GitHub...');
+      
+      const githubConfig = await figma.clientStorage.getAsync('github-config');
+      GitHubManager._validateGitHubConfig(githubConfig);
+
+      const structuredTokens = await StructuredTokenGenerator.generateStructuredTokens(this.selectedCollections);
+      const fileStructure = StructuredTokenGenerator.generateFileStructure(structuredTokens);
+      
+      await GitHubManager._createStructuredPR(githubConfig, fileStructure, this.commitDescription);
+      
+      Logger.success('Structured tokens exported to GitHub successfully');
+      
+    } catch (error) {
+      Logger.error('Error exporting structured tokens to GitHub:', error);
+      MessageService.postToUI({
+        type: 'github-error',
+        message: 'Error exporting structured tokens to GitHub: ' + error.message
+      });
+    }
   }
 }
 
@@ -1197,7 +1691,7 @@ class PluginController {
         Logger.error('Unhandled error in message handler:', error);
         MessageService.postToUI({
           type: 'error',
-          message: `Unhandled error: ${error.message}`
+          message: 'Unhandled error: ' + error.message
         });
       }
     };

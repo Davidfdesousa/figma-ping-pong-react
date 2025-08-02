@@ -1,16 +1,30 @@
 
-# Figma Token Exporter
+# Figma Token Exporter Plugin
 
-Plugin modular para Figma que permite exportar design tokens e integração completa com GitHub workflows.
+Plugin avançado para Figma que permite exportar design tokens com suporte completo a estruturas organizadas e integração GitHub.
 
-## 🚀 Funcionalidades
+## 🚀 Funcionalidades Principais
 
-- ✅ **Exportação de Tokens**: Exporta tokens/variáveis do Figma com suporte a múltiplos modos
-- ✅ **Integração GitHub**: Criação automática de PRs com rastreamento de mudanças
-- ✅ **Comparação de Tokens**: Detecção inteligente de alterações entre versões
-- ✅ **Arquitetura Modular**: Código limpo e organizado com responsabilidades separadas
-- ✅ **Tratamento de Aliases**: Suporte completo a referências entre variáveis
-- ✅ **Interface Intuitiva**: UI React moderna e responsiva
+### ✅ Exportação Tradicional
+- Exporta tokens/variáveis do Figma em JSON único
+- Suporte a múltiplos modos e coleções
+- Tratamento completo de aliases e referências
+
+### 🆕 Exportação Estruturada (v7.0.0)
+- **Estrutura de Pastas Organizadas**: Tokens organizados em `foundation/` e `themes/`
+- **Categorização Automática**: Spacing, colors, typography, etc.
+- **Download ZIP**: Baixe toda a estrutura compactada
+- **GitHub Multi-arquivo**: Export direto para GitHub com estrutura de pastas
+
+### ⚙️ Integração GitHub
+- Criação automática de PRs com rastreamento de mudanças
+- Suporte a commits únicos com múltiplos arquivos
+- Configuração flexível de repositório
+
+### 🎨 Gerenciamento de Marcas
+- Criação de novas marcas baseadas em existentes
+- Cópia automática de valores entre modos
+- Interface intuitiva para seleção
 
 ## 📥 Como usar
 
