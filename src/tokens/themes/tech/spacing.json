@@ -1,0 +1,12 @@
+{
+  "spacing": {
+    "s100": {
+      "value": "{spacing.1}",
+      "theme": "tech"
+    },
+    "s200": {
+      "value": "{spacing.2}",
+      "theme": "tech"
+    }
+  }
+}

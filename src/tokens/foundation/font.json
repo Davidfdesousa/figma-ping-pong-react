@@ -1,0 +1,12 @@
+{
+  "font": {
+    "size_base": {
+      "value": "16px",
+      "theme": "font"
+    },
+    "size_highlight": {
+      "value": "24px",
+      "theme": "font"
+    }
+  }
+}

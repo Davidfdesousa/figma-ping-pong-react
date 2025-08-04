@@ -1,0 +1,68 @@
+{
+  "colors": {
+    "neutral_0": {
+      "value": "#F1F1F1",
+      "theme": "color"
+    },
+    "neutral_200": {
+      "value": "#CCCCCC",
+      "theme": "color"
+    },
+    "neutral_900": {
+      "value": "#1A1A1A",
+      "theme": "color"
+    },
+    "green_200": {
+      "value": "#32F950",
+      "theme": "color"
+    },
+    "green_500": {
+      "value": "#09951E",
+      "theme": "color"
+    },
+    "green_800": {
+      "value": "#014214",
+      "theme": "color"
+    },
+    "blue_200": {
+      "value": "#3FA2FF",
+      "theme": "color"
+    },
+    "blue_500": {
+      "value": "#1C20E7",
+      "theme": "color"
+    },
+    "blue_800": {
+      "value": "#010377",
+      "theme": "color"
+    },
+    "violet_200": {
+      "value": "#B758FF",
+      "theme": "color"
+    },
+    "violet_500": {
+      "value": "#7713C3",
+      "theme": "color"
+    },
+    "violet_800": {
+      "value": "#310056",
+      "theme": "color"
+    },
+    "scarlet_200": {
+      "value": "#F17575",
+      "theme": "color"
+    },
+    "scarlet_500": {
+      "value": "#AF0D0D",
+      "theme": "color"
+    },
+    "scarlet_600": {
+      "value": "#4C0000",
+      "theme": "color"
+    },
+    "yellow_500": {
+      "value": "#FFE100",
+      "theme": "color"
+    }
+  }
+}

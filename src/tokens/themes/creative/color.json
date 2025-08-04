@@ -1,0 +1,28 @@
+{
+  "color": {
+    "brand_primary_base": {
+      "value": "{colors.scarlet.500}",
+      "theme": "creative"
+    },
+    "brand_primary_lightest": {
+      "value": "{colors.scarlet.200}",
+      "theme": "creative"
+    },
+    "brand_primary_darkest": {
+      "value": "{colors.scarlet.600}",
+      "theme": "creative"
+    },
+    "brand_secondary_base": {
+      "value": "{colors.neutral.900}",
+      "theme": "creative"
+    },
+    "brand_secondary_lightest": {
+      "value": "{colors.neutral.900}",
+      "theme": "creative"
+    },
+    "brand_secondary_darkest": {
+      "value": "{colors.neutral.900}",
+      "theme": "creative"
+    }
+  }
+}

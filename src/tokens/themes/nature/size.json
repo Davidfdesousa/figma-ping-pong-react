@@ -1,0 +1,20 @@
+{
+  "size": {
+    "radius_medium": {
+      "value": "4px",
+      "theme": "nature"
+    },
+    "size100": {
+      "value": "{sizing.unit_8}",
+      "theme": "nature"
+    },
+    "size200": {
+      "value": "{sizing.unit_16}",
+      "theme": "nature"
+    },
+    "size300": {
+      "value": "{sizing.unit_24}",
+      "theme": "nature"
+    }
+  }
+}

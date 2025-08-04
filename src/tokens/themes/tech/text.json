@@ -1,0 +1,36 @@
+{
+  "text": {
+    "weight_bold": {
+      "value": "700px",
+      "theme": "tech"
+    },
+    "family_body": {
+      "value": "Roboto",
+      "theme": "tech"
+    },
+    "family_highlight": {
+      "value": "Arial",
+      "theme": "tech"
+    },
+    "font_size_125": {
+      "value": "12px",
+      "theme": "tech"
+    },
+    "font_size_200": {
+      "value": "16px",
+      "theme": "tech"
+    },
+    "font_size_300": {
+      "value": "24px",
+      "theme": "tech"
+    },
+    "font_lineHeight_100": {
+      "value": "16px",
+      "theme": "tech"
+    },
+    "font_lineHeight_200": {
+      "value": "24px",
+      "theme": "tech"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "color": {
+    "brand_primary_base": {
+      "value": "{colors.blue.500}",
+      "theme": "tech"
+    },
+    "brand_primary_lightest": {
+      "value": "{colors.blue.200}",
+      "theme": "tech"
+    },
+    "brand_primary_darkest": {
+      "value": "{colors.blue.800}",
+      "theme": "tech"
+    },
+    "brand_secondary_base": {
+      "value": "{colors.neutral.0}",
+      "theme": "tech"
+    },
+    "brand_secondary_lightest": {
+      "value": "{colors.neutral.0}",
+      "theme": "tech"
+    },
+    "brand_secondary_darkest": {
+      "value": "{colors.neutral.0}",
+      "theme": "tech"
+    }
+  }
+}

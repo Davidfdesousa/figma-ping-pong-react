@@ -1,0 +1,12 @@
+{
+  "border": {
+    "radius_lg": {
+      "value": "500px",
+      "theme": "border"
+    },
+    "width_thin": {
+      "value": "2px",
+      "theme": "border"
+    }
+  }
+}

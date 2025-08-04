@@ -1,0 +1,20 @@
+{
+  "sizing": {
+    "unit_8": {
+      "value": "8px",
+      "theme": "sizing"
+    },
+    "unit_16": {
+      "value": "16px",
+      "theme": "sizing"
+    },
+    "unit_24": {
+      "value": "24px",
+      "theme": "sizing"
+    },
+    "unit_1": {
+      "value": "1px",
+      "theme": "sizing"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "text": {
+    "weight_bold": {
+      "value": "700px",
+      "theme": "nature"
+    },
+    "family_body": {
+      "value": "Roboto",
+      "theme": "nature"
+    },
+    "family_highlight": {
+      "value": "Arial",
+      "theme": "nature"
+    },
+    "font_size_125": {
+      "value": "12px",
+      "theme": "nature"
+    },
+    "font_size_200": {
+      "value": "16px",
+      "theme": "nature"
+    },
+    "font_size_300": {
+      "value": "24px",
+      "theme": "nature"
+    },
+    "font_lineHeight_100": {
+      "value": "16px",
+      "theme": "nature"
+    },
+    "font_lineHeight_200": {
+      "value": "24px",
+      "theme": "nature"
+    }
+  }
+}

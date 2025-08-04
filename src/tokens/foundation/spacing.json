@@ -1,0 +1,12 @@
+{
+  "spacing": {
+    "1": {
+      "value": "4px",
+      "theme": "spacing"
+    },
+    "2": {
+      "value": "8px",
+      "theme": "spacing"
+    }
+  }
+}
