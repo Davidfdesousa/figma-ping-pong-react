@@ -639,30 +639,6 @@
           }
         }
       },
-      "easing": {
-        "linear": {
-          "value": "1px",
-          "type": "other",
-          "$extensions": {
-            "mode": {
-              "light": "1px",
-              "dark": "1px",
-              "contrast": "1px"
-            }
-          }
-        },
-        "exit": {
-          "value": "1px",
-          "type": "other",
-          "$extensions": {
-            "mode": {
-              "light": "1px",
-              "dark": "1px",
-              "contrast": "1px"
-            }
-          }
-        }
-      },
       "scale": {
         "grown": {
           "value": 100,
@@ -696,6 +672,30 @@
               "light": "infinite",
               "dark": "infinite",
               "contrast": "infinite"
+            }
+          }
+        }
+      },
+      "easing": {
+        "linear": {
+          "value": "cubic_bezier (1.00, 0.00, 0.83, 0.83)",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "cubic_bezier (1.00, 0.00, 0.83, 0.83)",
+              "dark": "cubic_bezier (1.00, 0.00, 0.83, 0.83)",
+              "contrast": "cubic_bezier (1.00, 0.00, 0.83, 0.83)"
+            }
+          }
+        },
+        "exit": {
+          "value": "cubic_bezier (-1.00, 0.00, 0.83, 0.83)",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "cubic_bezier (-1.00, 0.00, 0.83, 0.83)",
+              "dark": "cubic_bezier (-1.00, 0.00, 0.83, 0.83)",
+              "contrast": "cubic_bezier (-1.00, 0.00, 0.83, 0.83)"
             }
           }
         }
@@ -795,13 +795,13 @@
     "font": {
       "weight": {
         "bold": {
-          "value": "700px",
+          "value": 700,
           "type": "other",
           "$extensions": {
             "mode": {
-              "Tech": "700px",
-              "Nature": "700px",
-              "Creative": "700px"
+              "Tech": 700,
+              "Nature": 700,
+              "Creative": 700
             }
           }
         }

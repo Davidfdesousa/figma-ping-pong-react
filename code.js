@@ -198,6 +198,12 @@ function formatTokenValue(value, type, tokenName = '') {
       // Return just the numeric value for scale tokens
       return value;
     }
+    // Check if it's a font weight token (should not have any unit)
+    if (tokenName.toLowerCase().includes('font') && 
+        tokenName.toLowerCase().includes('weight')) {
+      // Return just the numeric value for font weight tokens
+      return value;
+    }
     // Convert numbers to px for spacing, border, etc.
     return `${value}px`;
   } else if (type === 'STRING') {
