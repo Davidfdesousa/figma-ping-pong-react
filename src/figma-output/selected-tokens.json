@@ -615,25 +615,25 @@
       },
       "motion": {
         "time": {
-          "soft": {
-            "value": "1px",
+          "instant": {
+            "value": "100ms",
             "type": "other",
             "$extensions": {
               "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
+                "light": "100ms",
+                "dark": "100ms",
+                "contrast": "100ms"
               }
             }
           },
-          "static": {
-            "value": "2px",
+          "quicker": {
+            "value": "200ms",
             "type": "other",
             "$extensions": {
               "mode": {
-                "light": "2px",
-                "dark": "2px",
-                "contrast": "2px"
+                "light": "200ms",
+                "dark": "200ms",
+                "contrast": "200ms"
               }
             }
           }

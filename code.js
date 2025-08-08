@@ -187,6 +187,12 @@ function formatTokenValue(value, type, tokenName = '') {
       // Round to 2 decimal places for opacity values
       return Math.round(value * 100) / 100;
     }
+    // Check if it's a motion time token (should have ms unit)
+    if (tokenName.toLowerCase().includes('motion') && 
+        tokenName.toLowerCase().includes('time')) {
+      // Add ms unit directly (value is already in milliseconds)
+      return `${value}ms`;
+    }
     // Convert numbers to px for spacing, border, etc.
     return `${value}px`;
   } else if (type === 'STRING') {
