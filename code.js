@@ -123,7 +123,7 @@ async function exportSelectedTokens(selectedCollectionIds) {
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
             tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
+            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType, variable.name);
           }
         }
       }
@@ -170,7 +170,7 @@ async function exportSelectedTokens(selectedCollectionIds) {
 
 
 // Helper function to format token values based on type
-function formatTokenValue(value, type) {
+function formatTokenValue(value, type, tokenName = '') {
   if (type === 'COLOR') {
     if (typeof value === 'object' && value.r !== undefined) {
       // Convert RGB to hex
@@ -180,6 +180,13 @@ function formatTokenValue(value, type) {
       return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`.toUpperCase();
     }
   } else if (type === 'FLOAT') {
+    // Check if it's an opacity token (should not have px unit)
+    if (tokenName.toLowerCase().includes('opacity') || 
+        tokenName.toLowerCase().includes('alpha') ||
+        tokenName.toLowerCase().includes('transparent')) {
+      // Round to 2 decimal places for opacity values
+      return Math.round(value * 100) / 100;
+    }
     // Convert numbers to px for spacing, border, etc.
     return `${value}px`;
   } else if (type === 'STRING') {
@@ -273,7 +280,7 @@ async function exportToGitHub(selectedCollectionIds) {
             const aliasedVariable = await figma.variables.getVariableByIdAsync(value.id);
             tokenValues[mode.name] = `{${aliasedVariable.name.replace(/\//g, '.')}}`;
           } else {
-            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType);
+            tokenValues[mode.name] = formatTokenValue(value, variable.resolvedType, variable.name);
           }
         }
       }
