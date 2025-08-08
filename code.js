@@ -193,6 +193,11 @@ function formatTokenValue(value, type, tokenName = '') {
       // Add ms unit directly (value is already in milliseconds)
       return `${value}ms`;
     }
+    // Check if it's a scale token (should not have any unit)
+    if (tokenName.toLowerCase().includes('scale')) {
+      // Return just the numeric value for scale tokens
+      return value;
+    }
     // Convert numbers to px for spacing, border, etc.
     return `${value}px`;
   } else if (type === 'STRING') {
@@ -215,7 +220,15 @@ function parseTokenPath(tokenName) {
   // Clean up path elements
   path = path.map(part => part.trim()).filter(part => part.length > 0);
   
-  return path;
+  // Remove consecutive duplicates
+  const cleanPath = [];
+  for (let i = 0; i < path.length; i++) {
+    if (i === 0 || path[i] !== path[i - 1]) {
+      cleanPath.push(path[i]);
+    }
+  }
+  
+  return cleanPath;
 }
 
 // Helper function to set nested values in object

@@ -612,138 +612,90 @@
             }
           }
         }
+      }
+    },
+    "motion": {
+      "time": {
+        "instant": {
+          "value": "100ms",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "100ms",
+              "dark": "100ms",
+              "contrast": "100ms"
+            }
+          }
+        },
+        "quicker": {
+          "value": "200ms",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "200ms",
+              "dark": "200ms",
+              "contrast": "200ms"
+            }
+          }
+        }
       },
-      "motion": {
-        "time": {
-          "instant": {
-            "value": "100ms",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "100ms",
-                "dark": "100ms",
-                "contrast": "100ms"
-              }
-            }
-          },
-          "quicker": {
-            "value": "200ms",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "200ms",
-                "dark": "200ms",
-                "contrast": "200ms"
-              }
+      "easing": {
+        "linear": {
+          "value": "1px",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "1px",
+              "dark": "1px",
+              "contrast": "1px"
             }
           }
         },
-        "repeat": {
-          "loop": {
-            "value": "1px",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
-              }
+        "exit": {
+          "value": "1px",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "1px",
+              "dark": "1px",
+              "contrast": "1px"
+            }
+          }
+        }
+      },
+      "scale": {
+        "grown": {
+          "value": 100,
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": 100,
+              "dark": 100,
+              "contrast": 100
             }
           }
         },
-        "scale": {
-          "grow": {
-            "value": "1px",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
-              }
-            }
-          },
-          "full": {
-            "value": "1px",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
-              }
-            }
-          },
-          "shirink": {
-            "grow": {
-              "value": "1px",
-              "type": "other",
-              "$extensions": {
-                "mode": {
-                  "light": "1px",
-                  "dark": "1px",
-                  "contrast": "1px"
-                }
-              }
-            },
-            "full": {
-              "value": "1px",
-              "type": "other",
-              "$extensions": {
-                "mode": {
-                  "light": "1px",
-                  "dark": "1px",
-                  "contrast": "1px"
-                }
-              }
-            }
-          },
-          "grown": {
-            "grow": {
-              "value": "1px",
-              "type": "other",
-              "$extensions": {
-                "mode": {
-                  "light": "1px",
-                  "dark": "1px",
-                  "contrast": "1px"
-                }
-              }
-            },
-            "full": {
-              "value": "1px",
-              "type": "other",
-              "$extensions": {
-                "mode": {
-                  "light": "1px",
-                  "dark": "1px",
-                  "contrast": "1px"
-                }
-              }
+        "inexistent": {
+          "value": "0",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "0",
+              "dark": "0",
+              "contrast": "0"
             }
           }
-        },
-        "easing": {
-          "linear": {
-            "value": "1px",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
-              }
-            }
-          },
-          "exit": {
-            "value": "1px",
-            "type": "other",
-            "$extensions": {
-              "mode": {
-                "light": "1px",
-                "dark": "1px",
-                "contrast": "1px"
-              }
+        }
+      },
+      "repeat": {
+        "loop": {
+          "value": "infinite",
+          "type": "other",
+          "$extensions": {
+            "mode": {
+              "light": "infinite",
+              "dark": "infinite",
+              "contrast": "infinite"
             }
           }
         }
