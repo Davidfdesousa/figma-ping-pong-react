@@ -15,10 +15,9 @@ const CONSTANTS = {
 
 const MESSAGE_TYPES = {
   LOAD_GITHUB_CONFIG: 'load-github-config',
-  LOAD_BRANDS: 'load-brands',
   LOAD_COLLECTIONS: 'load-collections',
   EXPORT_SELECTED_TOKENS: 'export-selected-tokens',
-  CREATE_BRAND_IN_FIGMA: 'create-brand-in-figma',
+  CREATE_MODE_IN_COLLECTION: 'create-mode-in-collection',
   SAVE_GITHUB_CONFIG: 'save-github-config',
   EXPORT_TO_GITHUB: 'export-to-github',
   CLOSE: 'close'
@@ -199,6 +198,14 @@ class FigmaApiService {
 
     return variables.filter(Boolean);
   }
+
+  /**
+   * Checks whether a collection object is an ExtendedVariableCollection.
+   * Extended collections have isExtension === true (Figma Enterprise feature).
+   */
+  static isExtendedCollection(collection) {
+    return collection && collection.isExtension === true;
+  }
 }
 
 // ============================================================================
@@ -210,17 +217,33 @@ class CollectionManager {
     try {
       const collections = await FigmaApiService.getLocalVariableCollections();
       
-      const collectionsData = collections.map(collection => ({
-        id: collection.id,
-        name: collection.name,
-        variableCount: collection.variableIds.length,
-        modes: collection.modes.map(mode => ({
-          modeId: mode.modeId,
-          name: mode.name
-        }))
-      }));
+      const collectionsData = collections.map(collection => {
+        const isExtended = FigmaApiService.isExtendedCollection(collection);
+        
+        const data = {
+          id: collection.id,
+          name: collection.name,
+          variableCount: collection.variableIds.length,
+          modes: collection.modes.map(mode => ({
+            modeId: mode.modeId,
+            name: mode.name,
+            parentModeId: mode.parentModeId || null
+          })),
+          isExtended: isExtended
+        };
+
+        // Include extended collection metadata when available
+        if (isExtended) {
+          data.parentCollectionId = collection.parentVariableCollectionId || null;
+          data.rootCollectionId = collection.rootVariableCollectionId || null;
+          Logger.info(`Extended collection detected: "${collection.name}" (parent: ${data.parentCollectionId})`);
+        }
+
+        return data;
+      });
       
-      Logger.success(`Loaded ${collectionsData.length} collections`);
+      const extendedCount = collectionsData.filter(c => c.isExtended).length;
+      Logger.success(`Loaded ${collectionsData.length} collections (${extendedCount} extended)`);
       
       MessageService.postToUI({ 
         type: 'collections-loaded', 
@@ -285,8 +308,11 @@ class TokenGenerator {
     const localVariables = await FigmaApiService.getLocalVariables();
     const structuredTokens = {};
     
+    // Build a collection cache to avoid redundant async fetches
+    const collectionCache = {};
+
     for (const variable of localVariables) {
-      await TokenGenerator._processVariable(variable, selectedCollectionIds, structuredTokens);
+      await TokenGenerator._processVariable(variable, selectedCollectionIds, structuredTokens, collectionCache);
     }
     
     Logger.success('Tokens generation completed');
@@ -299,18 +325,36 @@ class TokenGenerator {
     }
   }
 
-  static async _processVariable(variable, selectedCollectionIds, structuredTokens) {
+  static async _getCollectionCached(collectionId, cache) {
+    if (!cache[collectionId]) {
+      cache[collectionId] = await FigmaApiService.getVariableCollectionById(collectionId);
+    }
+    return cache[collectionId];
+  }
+
+  static async _processVariable(variable, selectedCollectionIds, structuredTokens, collectionCache) {
     if (!variable || !variable.variableCollectionId) return;
     
-    const collection = await FigmaApiService.getVariableCollectionById(variable.variableCollectionId);
+    const collection = await TokenGenerator._getCollectionCached(variable.variableCollectionId, collectionCache);
     
     if (!selectedCollectionIds.includes(collection.id)) return;
+
+    let tokenValues;
+
+    if (FigmaApiService.isExtendedCollection(collection)) {
+      // Extended collection: merge parent values with local overrides
+      tokenValues = await TokenGenerator._extractExtendedTokenValues(variable, collection, collectionCache);
+    } else {
+      // Standard collection: use valuesByMode directly
+      tokenValues = await TokenGenerator._extractTokenValues(variable, collection);
+    }
     
-    const tokenValues = await TokenGenerator._extractTokenValues(variable, collection);
     const tokenData = TokenGenerator._createTokenData(tokenValues, collection);
     
     TokenGenerator._addToStructuredTokens(structuredTokens, collection.name, variable.name, tokenData);
   }
+
+  // ── Standard collection value extraction ────────────────────────────────────
 
   static async _extractTokenValues(variable, collection) {
     const tokenValues = {};
@@ -325,6 +369,90 @@ class TokenGenerator {
     
     return tokenValues;
   }
+
+  // ── Extended collection value extraction ────────────────────────────────────
+
+  /**
+   * For an extended collection variable, uses the official Figma API method
+   * `variable.valuesByModeForCollectionAsync(extendedCollection)` which returns
+   * the correct merged map of { modeId: value } — already combining inherited
+   * values from the parent collection with any brand-specific overrides.
+   *
+   * Falls back to reading variableOverrides manually if the async method is
+   * unavailable (older plugin API versions).
+   */
+  static async _extractExtendedTokenValues(variable, extendedCollection, collectionCache) {
+    const tokenValues = {};
+
+    let valuesByMode = null;
+
+    // Preferred path: use the official API that handles inheritance automatically
+    if (typeof variable.valuesByModeForCollectionAsync === 'function') {
+      try {
+        valuesByMode = await variable.valuesByModeForCollectionAsync(extendedCollection);
+        Logger.debug(`Extended collection "${extendedCollection.name}": used valuesByModeForCollectionAsync for "${variable.name}"`);
+      } catch (e) {
+        Logger.warning(`valuesByModeForCollectionAsync failed for "${variable.name}" in "${extendedCollection.name}":`, e);
+      }
+    }
+
+    // Fallback: reconstruct manually via variableOverrides + parent inheritance
+    if (!valuesByMode) {
+      Logger.debug(`Extended collection "${extendedCollection.name}": falling back to manual override resolution for "${variable.name}"`);
+      valuesByMode = await TokenGenerator._resolveExtendedValuesFallback(variable, extendedCollection, collectionCache);
+    }
+
+    // Convert the flat modeId→value map into modeName→formattedValue
+    for (const mode of extendedCollection.modes) {
+      const rawValue = valuesByMode[mode.modeId];
+      if (rawValue !== undefined && rawValue !== null) {
+        tokenValues[mode.name] = await TokenGenerator._resolveTokenValue(rawValue, variable);
+      }
+    }
+
+    return tokenValues;
+  }
+
+  /**
+   * Manual fallback for resolving extended collection values when
+   * valuesByModeForCollectionAsync is not available.
+   *
+   * Resolution order per mode:
+   *   1. variableOverrides[variable.id][mode.modeId]  — brand-specific override
+   *   2. parent collection's variable value at mode.parentModeId — inherited
+   *   3. variable.valuesByMode[mode.modeId]            — last resort
+   */
+  static async _resolveExtendedValuesFallback(variable, extendedCollection, collectionCache) {
+    const valuesByMode = {};
+    const overrides = (extendedCollection.variableOverrides || {})[variable.id] || {};
+
+    // Pre-fetch parent variable once if needed
+    let parentVariable = null;
+    const needsParent = extendedCollection.modes.some(
+      mode => overrides[mode.modeId] === undefined && mode.parentModeId
+    );
+    if (needsParent && extendedCollection.parentVariableCollectionId) {
+      try {
+        parentVariable = await FigmaApiService.getVariableById(variable.id);
+      } catch (e) {
+        Logger.warning(`Could not fetch parent variable for "${variable.name}":`, e);
+      }
+    }
+
+    for (const mode of extendedCollection.modes) {
+      if (overrides[mode.modeId] !== undefined) {
+        valuesByMode[mode.modeId] = overrides[mode.modeId];
+      } else if (parentVariable && mode.parentModeId && parentVariable.valuesByMode[mode.parentModeId] !== undefined) {
+        valuesByMode[mode.modeId] = parentVariable.valuesByMode[mode.parentModeId];
+      } else if (variable.valuesByMode[mode.modeId] !== undefined) {
+        valuesByMode[mode.modeId] = variable.valuesByMode[mode.modeId];
+      }
+    }
+
+    return valuesByMode;
+  }
+
+  // ── Shared helpers ───────────────────────────────────────────────────────────
 
   static async _resolveTokenValue(value, variable) {
     if (typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
@@ -371,427 +499,125 @@ class TokenGenerator {
 }
 
 // ============================================================================
-// BRAND MANAGER
+// MODE MANAGER
+// Fully agnostic: operates on collection IDs and mode IDs supplied by the UI.
+// No collection or mode names are assumed or hardcoded here.
 // ============================================================================
 
-class BrandManager {
-  static async loadBrands() {
+class ModeManager {
+  /**
+   * Creates a new mode in any collection, copying all variable values from a
+   * base mode. All parameters come from the UI (IDs, not names).
+   *
+   * @param {string} collectionId   - ID of the target collection
+   * @param {string} baseModeId     - ID of the mode to copy values from
+   * @param {string} newModeName    - Name for the new mode
+   */
+  static async createModeInCollection(collectionId, baseModeId, newModeName) {
     try {
-      Logger.info('Loading brands from Brands collection...');
-      
-      const brandsCollection = await CollectionManager.findCollectionByName('brands');
-      if (!brandsCollection) {
-        throw new Error('Collection "Brands" not found');
+      if (!collectionId || !baseModeId || !newModeName || !newModeName.trim()) {
+        throw new Error('collectionId, baseModeId and newModeName are required');
       }
-      
-      const brands = await BrandManager._extractBrandsFromCollection(brandsCollection);
-      
-      Logger.success(`Loaded ${brands.length} brands:`, brands.map(b => b.name));
-      
+
+      const cleanModeName = newModeName.trim();
+      Logger.info(`Creating mode "${cleanModeName}" in collection ${collectionId} from base mode ${baseModeId}`);
+
+      const collection = await FigmaApiService.getVariableCollectionById(collectionId);
+      if (!collection) throw new Error(`Collection ${collectionId} not found`);
+
+      const baseModeObj = collection.modes.find(m => m.modeId === baseModeId);
+      if (!baseModeObj) {
+        throw new Error(
+          `Mode ${baseModeId} not found in collection "${collection.name}". ` +
+          `Available: ${collection.modes.map(m => m.modeId).join(', ')}`
+        );
+      }
+
+      const targetModeObj = await ModeManager._getOrCreateMode(collection, cleanModeName);
+      const variables = await FigmaApiService.getVariablesFromCollection(collection);
+      const copiedCount = await ModeManager._copyModeValues(variables, baseModeObj.modeId, targetModeObj.modeId, collection.name);
+
+      const tokens = await TokenGenerator.generateTokensData([collection.id]);
+
+      Logger.success(`Mode "${cleanModeName}" ready in "${collection.name}" — ${copiedCount} values copied`);
+
       MessageService.postToUI({
-        type: 'brands-loaded',
-        data: brands
-      });
-      
-      return brands;
-    } catch (error) {
-      Logger.error('Error loading brands:', error);
-      MessageService.postToUI({
-        type: 'load-error',
-        message: error.message
-      });
-      throw error;
-    }
-  }
-
-  static async _extractBrandsFromCollection(brandsCollection) {
-    const brandsVariables = await CollectionManager.getVariablesFromCollection(brandsCollection);
-    
-    return brandsCollection.modes.map(mode => {
-      const variablesInMode = brandsVariables.filter(variable => 
-        variable && variable.valuesByMode && variable.valuesByMode[mode.modeId] !== undefined
-      ).length;
-      
-      return {
-        id: mode.name,
-        name: mode.name,
-        variableCount: variablesInMode,
-        modes: [{ id: mode.modeId, name: mode.name }]
-      };
-    });
-  }
-
-  static async createBrandInFigma(brandName, baseBrandName) {
-    try {
-      Logger.info(`🚀 STARTING BRAND CREATION PROCESS`);
-      Logger.info(`📝 Raw parameters received:`);
-      Logger.info(`  - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName && brandName.length ? brandName.length : 'null'})`);
-      Logger.info(`  - baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, length: ${baseBrandName && baseBrandName.length ? baseBrandName.length : 'null'})`);
-      
-      // Critical parameter validation
-      if (!brandName || typeof brandName !== 'string' || brandName.trim() === '') {
-        throw new Error(`Invalid brandName parameter: "${brandName}"`);
-      }
-      
-      if (!baseBrandName || typeof baseBrandName !== 'string' || baseBrandName.trim() === '') {
-        throw new Error(`Invalid baseBrandName parameter: "${baseBrandName}"`);
-      }
-      
-      // Trim and clean parameters
-      const cleanBrandName = brandName.trim();
-      const cleanBaseBrandName = baseBrandName.trim();
-      
-      Logger.info(`✅ Cleaned parameters:`);
-      Logger.info(`  - cleanBrandName: "${cleanBrandName}"`);
-      Logger.info(`  - cleanBaseBrandName: "${cleanBaseBrandName}"`);
-      
-      BrandManager._validateBrandInputs(cleanBrandName, cleanBaseBrandName);
-      Logger.debug(`✅ Input validation passed`);
-      
-      const { globalCollection, brandsCollection } = await BrandManager._getRequiredCollections();
-      Logger.debug(`✅ Collections loaded - Global: "${globalCollection.name}", Brands: "${brandsCollection.name}"`);
-      
-      const { brandsVariables } = await BrandManager._getCollectionVariables(globalCollection, brandsCollection);
-      Logger.debug(`✅ Variables loaded - ${brandsVariables.length} brand variables found`);
-      
-      Logger.info(`🔍 SEARCHING for base brand mode: "${cleanBaseBrandName}"`);
-      const baseBrandMode = BrandManager._findBaseBrandMode(brandsCollection, cleanBaseBrandName);
-      Logger.success(`✅ Base brand mode located: "${baseBrandMode.name}" (ID: ${baseBrandMode.modeId})`);
-      
-      Logger.info(`🔍 CREATING/FINDING target brand mode: "${cleanBrandName}"`);
-      const targetBrandMode = await BrandManager._getOrCreateTargetBrandMode(brandsCollection, cleanBrandName);
-      Logger.success(`✅ Target brand mode ready: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
-      
-      Logger.info(`🔄 COPYING VALUES from "${baseBrandMode.name}" to "${targetBrandMode.name}"`);
-      const copiedBrandsVariables = await BrandManager._copyBrandModeValues(brandsVariables, baseBrandMode, targetBrandMode);
-      
-      const brandData = await BrandManager._generateBrandResponse(cleanBrandName, cleanBaseBrandName, globalCollection, brandsCollection, 0, copiedBrandsVariables);
-      
-      Logger.success(`🎉 Brand "${cleanBrandName}" created/updated successfully from "${cleanBaseBrandName}"`);
-      Logger.info(`📊 Summary: ${copiedBrandsVariables} variables copied (no new variables created in Global)`);
-      
-      MessageService.postToUI({
-        type: 'brand-created-in-figma',
-        brandName: cleanBrandName,
-        data: brandData,
-        variablesCreated: copiedBrandsVariables
-      });
-      
-    } catch (error) {
-      Logger.error('❌ BRAND CREATION FAILED:', error);
-      Logger.error(`💥 Error details - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
-      Logger.error(`📋 Error stack:`, error.stack);
-      MessageService.postToUI({
-        type: 'brand-error',
-        message: error.message
-      });
-    }
-  }
-
-  static _validateBrandInputs(brandName, baseBrandName) {
-    Logger.debug(`🔍 Validating brand inputs:`);
-    Logger.debug(`  - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName ? brandName.length : 'null'})`);
-    Logger.debug(`  - baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, length: ${baseBrandName ? baseBrandName.length : 'null'})`);
-    
-    if (!Utils.validateInputs(brandName, baseBrandName)) {
-      Logger.error(`❌ Validation failed - brandName: "${brandName}", baseBrandName: "${baseBrandName}"`);
-      throw new Error(`Invalid parameters: brandName="${brandName}", baseBrandName="${baseBrandName}"`);
-    }
-    
-    // Additional check for parameter confusion
-    if (brandName === baseBrandName) {
-      Logger.warning(`⚠️ Warning: brandName and baseBrandName are identical: "${brandName}"`);
-    }
-    
-    Logger.success(`✅ Input validation passed - creating "${brandName}" from "${baseBrandName}"`);
-  }
-
-  static async _getRequiredCollections() {
-    const [globalCollection, brandsCollection] = await Promise.all([
-      CollectionManager.findCollectionByName('global'),
-      CollectionManager.findCollectionByName('brands')
-    ]);
-    
-    if (!globalCollection || !brandsCollection) {
-      throw new Error('Collections "Global" and "Brands" not found');
-    }
-    
-    return { globalCollection, brandsCollection };
-  }
-
-  static async _getCollectionVariables(globalCollection, brandsCollection) {
-    const brandsVariables = await CollectionManager.getVariablesFromCollection(brandsCollection);
-    return { brandsVariables };
-  }
-
-  static _findBaseBrandMode(brandsCollection, baseBrandName) {
-    // Intensive debugging to catch the exact issue
-    Logger.info(`🔍 DEBUGGING _findBaseBrandMode:`);
-    Logger.info(`  📝 Input baseBrandName: "${baseBrandName}" (length: ${baseBrandName ? baseBrandName.length : 'null'})`);
-    Logger.info(`  📁 Collection has ${brandsCollection.modes.length} modes`);
-    
-    const normalizedBaseBrandName = Utils.normalizeString(baseBrandName);
-    Logger.info(`  🎯 Normalized target: "${normalizedBaseBrandName}" (length: ${normalizedBaseBrandName.length})`);
-    
-    // Debug: Log all available modes with their normalized versions
-    Logger.info(`📋 Available modes analysis:`);
-    brandsCollection.modes.forEach((mode, index) => {
-      const normalizedModeName = Utils.normalizeString(mode.name);
-      const isExactMatch = normalizedModeName === normalizedBaseBrandName;
-      const isLooseMatch = mode.name.toLowerCase().includes(baseBrandName.toLowerCase());
-      
-      Logger.info(`  [${index}] "${mode.name}" -> "${normalizedModeName}"`);
-      Logger.info(`      Exact match: ${isExactMatch}`);
-      Logger.info(`      Loose match: ${isLooseMatch}`);
-      Logger.info(`      Mode ID: ${mode.modeId}`);
-    });
-    
-    // Find with detailed logging
-    const baseBrandMode = brandsCollection.modes.find((mode, index) => {
-      const normalizedModeName = Utils.normalizeString(mode.name);
-      const isMatch = normalizedModeName === normalizedBaseBrandName;
-      Logger.debug(`[${index}] Comparing "${mode.name}" (${normalizedModeName}) === "${baseBrandName}" (${normalizedBaseBrandName}): ${isMatch}`);
-      return isMatch;
-    });
-    
-    if (!baseBrandMode) {
-      const availableModes = brandsCollection.modes.map(m => m.name);
-      Logger.error(`❌ CRITICAL: Base brand mode "${baseBrandName}" not found!`);
-      Logger.error(`📋 Available modes: ${availableModes.join(', ')}`);
-      Logger.error(`🔍 Normalized search term: "${normalizedBaseBrandName}"`);
-      
-      // Additional debugging: try to find potential matches
-      const potentialMatches = brandsCollection.modes.filter(mode => 
-        mode.name.toLowerCase().includes(baseBrandName.toLowerCase())
-      );
-      
-      if (potentialMatches.length > 0) {
-        Logger.error(`🤔 Potential matches found: ${potentialMatches.map(m => m.name).join(', ')}`);
-      }
-      
-      throw new Error(
-        `Mode '${baseBrandName}' not found in Brands collection. ` +
-        `Available modes: ${availableModes.join(', ')}`
-      );
-    }
-    
-    Logger.success(`✅ SUCCESS: Base mode found: "${baseBrandMode.name}" (ID: ${baseBrandMode.modeId})`);
-    return baseBrandMode;
-  }
-
-  static async _getOrCreateTargetBrandMode(brandsCollection, brandName) {
-    Logger.info(`🔍 GETTING/CREATING target brand mode: "${brandName}"`);
-    Logger.debug(`📋 Input validation - brandName: "${brandName}" (type: ${typeof brandName}, length: ${brandName && brandName.length ? brandName.length : 'null'})`);
-    
-    // Validate collection input
-    if (!brandsCollection) {
-      Logger.error(`❌ CRITICAL: brandsCollection is null/undefined`);
-      throw new Error('Brands collection is required');
-    }
-    
-    if (!brandsCollection.modes || !Array.isArray(brandsCollection.modes)) {
-      Logger.error(`❌ CRITICAL: brandsCollection.modes is invalid:`, brandsCollection.modes);
-      throw new Error('Brands collection modes array is invalid');
-    }
-    
-    if (typeof brandsCollection.addMode !== 'function') {
-      Logger.error(`❌ CRITICAL: brandsCollection.addMode is not a function:`, typeof brandsCollection.addMode);
-      throw new Error('Brands collection addMode method is not available');
-    }
-    
-    Logger.debug(`✅ Collection validation passed - ${brandsCollection.modes.length} existing modes`);
-    
-    if (!brandName || typeof brandName !== 'string' || brandName.trim() === '') {
-      Logger.error(`❌ CRITICAL: Invalid brandName: "${brandName}"`);
-      throw new Error(`Invalid brand name: "${brandName}"`);
-    }
-    
-    const normalizedBrandName = Utils.normalizeString(brandName);
-    Logger.debug(`🎯 Normalized brand name: "${normalizedBrandName}"`);
-    
-    // Search for existing mode
-    let targetBrandMode = brandsCollection.modes.find(mode => 
-      Utils.normalizeString(mode.name) === normalizedBrandName
-    );
-    
-    if (targetBrandMode) {
-      Logger.info(`♻️ Found existing brand mode: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
-      
-      // Validate existing mode
-      if (!targetBrandMode.modeId || !targetBrandMode.name) {
-        Logger.error(`❌ CRITICAL: Found mode is invalid:`, targetBrandMode);
-        throw new Error('Found existing brand mode is invalid');
-      }
-    } else {
-      Logger.info(`🆕 Creating new brand mode: "${brandName}"`);
-      
-      // Validate mode limit before creating
-      BrandManager._validateModeLimit(brandsCollection);
-      
-      try {
-        Logger.debug(`📞 Calling brandsCollection.addMode("${brandName}")...`);
-        
-        // Call addMode and capture the result
-        const result = brandsCollection.addMode(brandName);
-        Logger.debug(`📋 addMode returned:`, typeof result, result);
-        
-        // Check if result is a valid mode object
-        if (typeof result === 'object' && result !== null && result.modeId && result.name) {
-          targetBrandMode = result;
-          Logger.success(`✅ Successfully created new mode: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
-        } else {
-          Logger.error(`❌ addMode returned invalid result:`, result);
-          
-          // Try to find the newly created mode by name as fallback
-          Logger.info(`🔄 Attempting to find newly created mode by name...`);
-          targetBrandMode = brandsCollection.modes.find(mode => mode.name === brandName);
-          
-          if (targetBrandMode && targetBrandMode.modeId) {
-            Logger.success(`✅ Found newly created mode via fallback search: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
-          } else {
-            throw new Error(`Failed to create new brand mode "${brandName}": addMode returned invalid result and fallback search failed`);
-          }
+        type: 'mode-created-in-collection',
+        collectionName: collection.name,
+        modeName: cleanModeName,
+        variablesUpdated: copiedCount,
+        data: {
+          collectionId: collection.id,
+          collectionName: collection.name,
+          modeName: cleanModeName,
+          baseModeId,
+          baseModeName: baseModeObj.name,
+          createdAt: new Date().toISOString(),
+          tokens
         }
-        
-      } catch (error) {
-        Logger.error(`❌ FAILED to create new mode:`, error);
-        throw new Error(`Failed to create new brand mode "${brandName}": ${error.message}`);
-      }
+      });
+    } catch (error) {
+      Logger.error('Mode creation failed:', error);
+      MessageService.postToUI({ type: 'mode-error', message: error.message });
     }
-    
-    // Final validation of the mode object
-    Logger.debug(`🔍 Final validation of targetBrandMode:`, targetBrandMode);
-    Logger.debug(`📋 Mode details: name="${targetBrandMode && targetBrandMode.name}", modeId="${targetBrandMode && targetBrandMode.modeId}", type="${typeof targetBrandMode}"`);
-    
-    if (!targetBrandMode) {
-      Logger.error(`❌ CRITICAL: targetBrandMode is null/undefined`);
-      throw new Error('Target brand mode is null or undefined after creation/retrieval');
-    }
-    
-    if (typeof targetBrandMode !== 'object') {
-      Logger.error(`❌ CRITICAL: targetBrandMode is not an object, it's: ${typeof targetBrandMode}`, targetBrandMode);
-      throw new Error(`Target brand mode is not an object, it's ${typeof targetBrandMode}: ${targetBrandMode}`);
-    }
-    
-    if (!targetBrandMode.modeId) {
-      Logger.error(`❌ CRITICAL: targetBrandMode.modeId is missing:`, targetBrandMode.modeId);
-      throw new Error('Target brand mode is missing modeId property');
-    }
-    
-    if (!targetBrandMode.name) {
-      Logger.error(`❌ CRITICAL: targetBrandMode.name is missing:`, targetBrandMode.name);
-      throw new Error('Target brand mode is missing name property');
-    }
-    
-    Logger.success(`✅ Target brand mode ready: "${targetBrandMode.name}" (ID: ${targetBrandMode.modeId})`);
-    return targetBrandMode;
   }
 
-  static _validateModeLimit(brandsCollection) {
-    if (brandsCollection.modes.length >= CONSTANTS.MAX_MODES_PER_COLLECTION) {
-      const existingModes = brandsCollection.modes.map(m => m.name).join(', ');
+  static async _getOrCreateMode(collection, modeName) {
+    const normalized = Utils.normalizeString(modeName);
+
+    // Return existing mode if already present
+    const existing = collection.modes.find(m => Utils.normalizeString(m.name) === normalized);
+    if (existing) {
+      Logger.info(`Mode "${modeName}" already exists — will overwrite values`);
+      return existing;
+    }
+
+    // Enforce Figma plan mode limit
+    if (collection.modes.length >= CONSTANTS.MAX_MODES_PER_COLLECTION) {
+      const names = collection.modes.map(m => m.name).join(', ');
       throw new Error(
-        `Cannot create new brand. Brands collection already has maximum ${CONSTANTS.MAX_MODES_PER_COLLECTION} modes: ${existingModes}. ` +
-        `Choose one of the existing modes to update.`
+        `Collection "${collection.name}" already has the maximum of ${CONSTANTS.MAX_MODES_PER_COLLECTION} modes: ${names}. ` +
+        `Remove one or choose an existing mode to overwrite.`
       );
     }
+
+    if (typeof collection.addMode !== 'function') {
+      throw new Error(`collection.addMode is not available on "${collection.name}"`);
+    }
+
+    const result = collection.addMode(modeName);
+    Logger.debug(`addMode returned:`, typeof result, result);
+
+    // addMode may return a mode object or just a string modeId depending on API version
+    if (result && typeof result === 'object' && result.modeId) return result;
+
+    // Fallback: find the newly created mode by name
+    const created = collection.modes.find(m => m.name === modeName);
+    if (created) return created;
+
+    throw new Error(`addMode did not create mode "${modeName}" in "${collection.name}"`);
   }
 
-  static async _copyBrandModeValues(brandsVariables, baseBrandMode, newBrandMode) {
-    Logger.info(`🔄 STARTING COPY OPERATION:`);
-    Logger.info(`  📤 Source: "${baseBrandMode && baseBrandMode.name ? baseBrandMode.name : 'undefined'}" (ID: ${baseBrandMode && baseBrandMode.modeId ? baseBrandMode.modeId : 'undefined'})`);
-    Logger.info(`  📥 Target: "${newBrandMode && newBrandMode.name ? newBrandMode.name : 'undefined'}" (ID: ${newBrandMode && newBrandMode.modeId ? newBrandMode.modeId : 'undefined'})`);
-    
-    // Critical validation before proceeding
-    if (!baseBrandMode || !baseBrandMode.modeId) {
-      Logger.error(`❌ CRITICAL ERROR: baseBrandMode is invalid:`, baseBrandMode);
-      throw new Error('Base brand mode is invalid or missing modeId');
-    }
-    
-    if (!newBrandMode || !newBrandMode.modeId) {
-      Logger.error(`❌ CRITICAL ERROR: newBrandMode is invalid:`, newBrandMode);
-      throw new Error('New brand mode is invalid or missing modeId');
-    }
-    
-    Logger.success(`✅ Mode validation passed - proceeding with copy operation`);
-    
+  static async _copyModeValues(variables, sourceModeId, targetModeId, collectionName) {
     let copiedCount = 0;
-    let totalVariables = 0;
-    let failedVariables = [];
-    
-    for (const brandsVar of brandsVariables) {
-      if (brandsVar && brandsVar.valuesByMode) {
-        totalVariables++;
-        
-        if (brandsVar.valuesByMode[baseBrandMode.modeId] !== undefined) {
-          const baseValue = brandsVar.valuesByMode[baseBrandMode.modeId];
-          try {
-            // Additional validation before setting value
-            if (!newBrandMode.modeId) {
-              throw new Error(`Target mode ID is undefined for mode "${newBrandMode.name}"`);
-            }
-            
-            brandsVar.setValueForMode(newBrandMode.modeId, baseValue);
-            copiedCount++;
-            Logger.debug(`✅ Successfully copied "${brandsVar.name}": ${JSON.stringify(baseValue)}`);
-          } catch (error) {
-            failedVariables.push(brandsVar.name);
-            Logger.error(`❌ FAILED copying "${brandsVar.name}":`, error);
-            Logger.error(`  📋 Details: baseModeId=${baseBrandMode.modeId}, targetModeId=${newBrandMode.modeId}`);
-          }
-        } else {
-          Logger.debug(`⚠️ Variable "${brandsVar.name}" has no value in base mode "${baseBrandMode.name}"`);
-        }
-      }
-    }
-    
-    if (failedVariables.length > 0) {
-      Logger.error(`❌ Failed to copy ${failedVariables.length} variables: ${failedVariables.join(', ')}`);
-    }
-    
-    Logger.success(`✅ COPY OPERATION COMPLETED: ${copiedCount}/${totalVariables} values copied to "${newBrandMode.name}"`);
-    return copiedCount;
-  }
+    const failed = [];
 
-  static async _generateBrandResponse(brandName, baseBrandName, globalCollection, brandsCollection, newGlobalVariablesCount, copiedBrandsVariables) {
-    const tokens = await TokenGenerator.generateTokensData([
-      globalCollection.id, 
-      brandsCollection.id
-    ]);
-    
-    return {
-      name: brandName,
-      description: `Brand mode ${brandName} created from ${baseBrandName} in Brands collection only`,
-      type: 'complete',
-      createdAt: new Date().toISOString(),
-      baseBrand: baseBrandName,
-      collections: [
-        {
-          id: globalCollection.id,
-          name: globalCollection.name,
-          variableCount: globalCollection.variableIds.length,
-          modified: false
-        },
-        {
-          id: brandsCollection.id,
-          name: brandsCollection.name,
-          variableCount: brandsCollection.variableIds.length,
-          modified: true
-        }
-      ],
-      tokens: tokens,
-      metadata: {
-        figmaFileKey: figma.fileKey,
-        figmaFileName: figma.root.name,
-        totalTokens: copiedBrandsVariables,
-        collectionsUsed: 2,
-        createdFromBrand: baseBrandName,
-        groupCreated: brandName,
-        collectionsModified: ['Brands'],
-        newVariablesCreated: 0,
-        variableValuesCopied: copiedBrandsVariables
+    for (const variable of variables) {
+      if (!variable || !variable.valuesByMode) continue;
+      if (variable.valuesByMode[sourceModeId] === undefined) continue;
+
+      try {
+        variable.setValueForMode(targetModeId, variable.valuesByMode[sourceModeId]);
+        copiedCount++;
+      } catch (e) {
+        failed.push(variable.name);
+        Logger.error(`Failed to copy "${variable.name}" in "${collectionName}":`, e);
       }
-    };
+    }
+
+    if (failed.length) Logger.warning(`${failed.length} variables could not be copied: ${failed.join(', ')}`);
+    Logger.success(`Copied ${copiedCount} values in "${collectionName}"`);
+    return copiedCount;
   }
 }
 
@@ -1021,18 +847,11 @@ class MessageHandler {
     Logger.debug(`🔍 Processing message: ${msg.type}`);
     Logger.debug(`📋 Full message object:`, JSON.stringify(msg, null, 2));
     
-    if (msg.type === MESSAGE_TYPES.CREATE_BRAND_IN_FIGMA) {
-      Logger.debug(`🎯 Brand creation command detected:`);
-      Logger.debug(`  - brandName: "${msg.brandName}" (type: ${typeof msg.brandName})`);
-      Logger.debug(`  - baseBrandName: "${msg.baseBrandName}" (type: ${typeof msg.baseBrandName})`);
-    }
-    
     const commands = {
       [MESSAGE_TYPES.LOAD_GITHUB_CONFIG]: () => new LoadGitHubConfigCommand(),
-      [MESSAGE_TYPES.LOAD_BRANDS]: () => new LoadBrandsCommand(),
       [MESSAGE_TYPES.LOAD_COLLECTIONS]: () => new LoadCollectionsCommand(),
       [MESSAGE_TYPES.EXPORT_SELECTED_TOKENS]: () => new ExportSelectedTokensCommand(msg.selectedCollections),
-      [MESSAGE_TYPES.CREATE_BRAND_IN_FIGMA]: () => new CreateBrandInFigmaCommand(msg.brandName, msg.baseBrandName),
+      [MESSAGE_TYPES.CREATE_MODE_IN_COLLECTION]: () => new CreateModeInCollectionCommand(msg.collectionId, msg.baseModeId, msg.newModeName),
       [MESSAGE_TYPES.SAVE_GITHUB_CONFIG]: () => new SaveGitHubConfigCommand(msg.config),
       [MESSAGE_TYPES.EXPORT_TO_GITHUB]: () => new ExportToGitHubCommand(msg.selectedCollections, msg.commitDescription),
       [MESSAGE_TYPES.CLOSE]: () => new ClosePluginCommand()
@@ -1064,12 +883,6 @@ class LoadGitHubConfigCommand extends Command {
   }
 }
 
-class LoadBrandsCommand extends Command {
-  async execute() {
-    await BrandManager.loadBrands();
-  }
-}
-
 class LoadCollectionsCommand extends Command {
   async execute() {
     await CollectionManager.loadCollections();
@@ -1095,49 +908,16 @@ class ExportSelectedTokensCommand extends Command {
   }
 }
 
-class CreateBrandInFigmaCommand extends Command {
-  constructor(brandName, baseBrandName) {
+class CreateModeInCollectionCommand extends Command {
+  constructor(collectionId, baseModeId, newModeName) {
     super();
-    
-    // Critical debugging for parameter passing
-    Logger.debug(`🔍 CONSTRUCTOR DEBUG:`);
-    Logger.debug(`  - Received brandName: "${brandName}" (type: ${typeof brandName}, is null: ${brandName === null}, is undefined: ${brandName === undefined})`);
-    Logger.debug(`  - Received baseBrandName: "${baseBrandName}" (type: ${typeof baseBrandName}, is null: ${baseBrandName === null}, is undefined: ${baseBrandName === undefined})`);
-    
-    this.brandName = brandName;
-    this.baseBrandName = baseBrandName;
-    
-    // Additional validation
-    if (this.brandName === undefined || this.brandName === null) {
-      Logger.error(`❌ CRITICAL: brandName is ${this.brandName} in constructor`);
-    }
-    
-    if (this.baseBrandName === undefined || this.baseBrandName === null) {
-      Logger.error(`❌ CRITICAL: baseBrandName is ${this.baseBrandName} in constructor`);
-    }
-    
-    Logger.debug(`📝 CreateBrandInFigmaCommand initialized with: brandName="${this.brandName}", baseBrandName="${this.baseBrandName}"`);
+    this.collectionId = collectionId;
+    this.baseModeId = baseModeId;
+    this.newModeName = newModeName;
   }
 
   async execute() {
-    Logger.debug(`🔥 COMMAND EXECUTION STARTING:`);
-    Logger.debug(`  - this.brandName: "${this.brandName}" (type: ${typeof this.brandName})`);
-    Logger.debug(`  - this.baseBrandName: "${this.baseBrandName}" (type: ${typeof this.baseBrandName})`);
-    
-    // Extra validation before calling BrandManager
-    if (!this.brandName || this.brandName === 'undefined' || typeof this.brandName !== 'string') {
-      Logger.error(`❌ CRITICAL ERROR: Invalid brandName in execute: "${this.brandName}"`);
-      throw new Error(`Invalid brandName: "${this.brandName}"`);
-    }
-    
-    if (!this.baseBrandName || this.baseBrandName === 'undefined' || typeof this.baseBrandName !== 'string') {
-      Logger.error(`❌ CRITICAL ERROR: Invalid baseBrandName in execute: "${this.baseBrandName}"`);
-      throw new Error(`Invalid baseBrandName: "${this.baseBrandName}"`);
-    }
-    
-    Logger.debug(`✅ Parameter validation passed in execute method`);
-    
-    await BrandManager.createBrandInFigma(this.brandName, this.baseBrandName);
+    await ModeManager.createModeInCollection(this.collectionId, this.baseModeId, this.newModeName);
   }
 }
 

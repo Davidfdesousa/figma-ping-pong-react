@@ -135,6 +135,27 @@
       margin-top: 2px;
     }
     
+    .badge-extended {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1a73e8;
+      border: 1px solid #c5d8fb;
+      border-radius: 10px;
+      font-size: 9px;
+      font-weight: 600;
+      padding: 1px 6px;
+      margin-left: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      vertical-align: middle;
+    }
+    
+    .collection-parent {
+      font-size: 10px;
+      color: #1a73e8;
+      margin-top: 2px;
+    }
+    
     .select-controls {
       display: flex;
       gap: 8px;
@@ -200,14 +221,20 @@
     </div>
     
     <div class="export-section">
-      <h4>🎯 Criar Brand no Figma</h4>
-      <p>Crie uma brand diretamente no Figma baseada em uma existente.</p>
-      <div id="figma-brand-creation">
-        <input type="text" id="figma-brand-name" placeholder="Nome da Nova Brand (ex: Luxury)" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px;">
-        <select id="base-brand-dropdown" style="width: 100%; padding: 8px; margin: 4px 0; border: 1px solid #e0e0e0; border-radius: 4px; background: white; z-index: 100;">
-          <option value="">Carregando collections...</option>
+      <h4>➕ Criar Modo em Collection</h4>
+      <p>Cria um novo modo em qualquer collection, copiando os valores de um modo existente.</p>
+      <div id="mode-creation">
+        <label style="display:block;font-size:11px;color:#666;margin-bottom:2px;">Collection</label>
+        <select id="mode-collection-select" style="width:100%;padding:8px;margin:0 0 6px 0;border:1px solid #e0e0e0;border-radius:4px;background:white;">
+          <option value="">Carregue as collections primeiro...</option>
         </select>
-        <button id="create-figma-brand-btn">Criar Brand no Figma</button>
+        <label style="display:block;font-size:11px;color:#666;margin-bottom:2px;">Modo base (copiar valores de)</label>
+        <select id="mode-base-select" style="width:100%;padding:8px;margin:0 0 6px 0;border:1px solid #e0e0e0;border-radius:4px;background:white;" disabled>
+          <option value="">Selecione uma collection...</option>
+        </select>
+        <label style="display:block;font-size:11px;color:#666;margin-bottom:2px;">Nome do novo modo</label>
+        <input type="text" id="new-mode-name" placeholder="Nome do novo modo" style="width:100%;padding:8px;margin:0 0 6px 0;border:1px solid #e0e0e0;border-radius:4px;">
+        <button id="create-mode-btn">Criar Modo</button>
       </div>
     </div>
 
@@ -261,260 +288,224 @@
   </div>
 
   <script>
+    // All collections loaded from Figma — no hardcoded names anywhere
     let collections = [];
-    
-    // Listen for messages from the plugin code
+
+    // ── Message handler ────────────────────────────────────────────────────────
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
+      if (!msg) return;
       console.log('Received message in UI:', msg);
-      
-      if (msg && msg.type === 'pong') {
-        showStatus('Pong recebido! ✅', 'success');
-      }
-      
-      if (msg && msg.type === 'github-config-loaded') {
-        loadGitHubConfigFields(msg.data);
-      }
-      
-      if (msg && msg.type === 'collections-loaded') {
+
+      if (msg.type === 'github-config-loaded') loadGitHubConfigFields(msg.data);
+
+      if (msg.type === 'collections-loaded') {
         collections = msg.data;
         displayCollections(collections);
-        showStatus('Collections carregadas! ✅', 'success');
+        populateModeCollectionSelect(collections);
+        showStatus('Collections carregadas!', 'success');
       }
-      
-      if (msg && msg.type === 'tokens-exported') {
-        showStatus('Tokens exportados com sucesso! ✅', 'success');
-        createDownloadLink('selected-tokens.json', msg.data, 'Baixar Tokens Selecionados JSON');
+
+      if (msg.type === 'tokens-exported') {
+        showStatus('Tokens exportados com sucesso!', 'success');
+        createDownloadLink('selected-tokens.json', msg.data, 'Baixar Tokens JSON');
       }
-      
-      if (msg && msg.type === 'collections-exported') {
-        showStatus('Collections exportadas com sucesso! ✅', 'success');
-        createDownloadLink('collections.json', msg.data, 'Baixar Collections JSON');
+
+      if (msg.type === 'github-config-saved') showStatus('Configuração do GitHub salva!', 'success');
+
+      if (msg.type === 'github-success') {
+        showStatus('PR criado no GitHub!', 'success');
+        if (msg.prUrl) createGitHubLink(msg.prUrl);
       }
-      
-      if (msg && msg.type === 'github-config-saved') {
-        showStatus('Configuração do GitHub salva! ✅', 'success');
+
+      if (msg.type === 'github-error') showStatus('Erro GitHub: ' + msg.message, 'error');
+
+      if (msg.type === 'mode-created-in-collection') {
+        showStatus(`Modo "${msg.modeName}" criado em "${msg.collectionName}" (${msg.variablesUpdated} variáveis copiadas)!`, 'success');
+        createDownloadLink(
+          `tokens-${msg.collectionName}-${msg.modeName}.json`.replace(/\s+/g, '-'),
+          msg.data,
+          `Baixar JSON — ${msg.collectionName}`
+        );
       }
-      
-      if (msg && msg.type === 'github-success') {
-        showStatus('PR criado no GitHub! ✅', 'success');
-        if (msg.prUrl) {
-          createGitHubLink(msg.prUrl);
-        }
-      }
-      
-      if (msg && msg.type === 'github-error') {
-        showStatus('Erro GitHub: ' + msg.message, 'error');
-      }
-      
-      if (msg && msg.type === 'brands-loaded') {
-        loadBrandsDropdown(msg.data);
-        showStatus('Brands carregadas! ✅', 'success');
-      }
-      
-      if (msg && msg.type === 'brand-created-in-figma') {
-        showStatus(`Brand '${msg.brandName}' criada no Figma com ${msg.variablesCreated} variáveis! ✅`, 'success');
-        createDownloadLink('figma-brand-' + msg.brandName + '.json', msg.data, 'Baixar Brand Figma JSON');
-      }
-      
-      if (msg && msg.type === 'brand-error') {
-        showStatus('Erro ao criar brand: ' + msg.message, 'error');
-      }
-      
-      if (msg && msg.type === 'load-error' || msg && msg.type === 'export-error') {
-        showStatus('Erro: ' + msg.message, 'error');
-      }
+
+      if (msg.type === 'mode-error') showStatus('Erro ao criar modo: ' + msg.message, 'error');
+
+      if (msg.type === 'load-error' || msg.type === 'export-error') showStatus('Erro: ' + msg.message, 'error');
     };
 
+    // ── Collection list (export section) ──────────────────────────────────────
     function displayCollections(collectionsData) {
       const container = document.getElementById('collections-container');
       const listElement = document.getElementById('collections-list');
-      
+
       container.style.display = 'block';
       listElement.innerHTML = '';
-      
+
       collectionsData.forEach(collection => {
         const item = document.createElement('div');
         item.className = 'collection-item';
-        
-        const modesText = collection.modes.map(mode => mode.name).join(', ');
-        
+
+        const modesText = collection.modes.map(m => m.name).join(', ');
+        const extendedBadge = collection.isExtended ? '<span class="badge-extended">Extended</span>' : '';
+        const parentInfo = collection.isExtended && collection.parentCollectionId
+          ? `<div class="collection-parent">↳ herda de: ${_findCollectionName(collectionsData, collection.parentCollectionId)}</div>`
+          : '';
+
         item.innerHTML = `
           <input type="checkbox" class="collection-checkbox" data-collection-id="${collection.id}" checked>
           <div class="collection-info">
-            <div class="collection-name">${collection.name}</div>
+            <div class="collection-name">${collection.name}${extendedBadge}</div>
             <div class="collection-details">${collection.variableCount} variáveis</div>
             <div class="collection-modes">Modos: ${modesText}</div>
+            ${parentInfo}
           </div>
         `;
-        
         listElement.appendChild(item);
       });
     }
-    
-    function getSelectedCollections() {
-      const checkboxes = document.querySelectorAll('.collection-checkbox:checked');
-      return Array.from(checkboxes).map(cb => cb.getAttribute('data-collection-id'));
+
+    function _findCollectionName(collectionsData, collectionId) {
+      const found = collectionsData.find(c => c.id === collectionId);
+      return found ? found.name : collectionId;
     }
 
+    function getSelectedCollections() {
+      return Array.from(document.querySelectorAll('.collection-checkbox:checked'))
+        .map(cb => cb.getAttribute('data-collection-id'));
+    }
+
+    // ── Mode creation selects ─────────────────────────────────────────────────
+    function populateModeCollectionSelect(collectionsData) {
+      const collSelect = document.getElementById('mode-collection-select');
+      collSelect.innerHTML = '<option value="">Selecione uma collection...</option>';
+      collectionsData.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name + (c.isExtended ? ' [Extended]' : '');
+        collSelect.appendChild(opt);
+      });
+    }
+
+    document.getElementById('mode-collection-select').onchange = function () {
+      const modeSelect = document.getElementById('mode-base-select');
+      const collectionId = this.value;
+      modeSelect.innerHTML = '<option value="">Selecione um modo base...</option>';
+      modeSelect.disabled = !collectionId;
+
+      if (!collectionId) return;
+
+      const coll = collections.find(c => c.id === collectionId);
+      if (!coll) return;
+
+      coll.modes.forEach(mode => {
+        const opt = document.createElement('option');
+        opt.value = mode.modeId;
+        opt.textContent = mode.name;
+        modeSelect.appendChild(opt);
+      });
+    };
+
+    document.getElementById('create-mode-btn').onclick = () => {
+      const collectionId = document.getElementById('mode-collection-select').value;
+      const baseModeId   = document.getElementById('mode-base-select').value;
+      const newModeName  = document.getElementById('new-mode-name').value.trim();
+
+      if (!collectionId || !baseModeId || !newModeName) {
+        showStatus('Selecione uma collection, um modo base e informe o nome do novo modo!', 'error');
+        return;
+      }
+
+      showStatus('Criando modo...', '');
+      parent.postMessage({
+        pluginMessage: {
+          type: 'create-mode-in-collection',
+          collectionId,
+          baseModeId,
+          newModeName
+        }
+      }, '*');
+    };
+
+    // ── Shared helpers ────────────────────────────────────────────────────────
     function showStatus(message, type = '') {
       const statusEl = document.getElementById('status');
       statusEl.textContent = message;
       statusEl.className = 'status ' + type;
       statusEl.style.display = 'block';
-      
-      // Hide after 3 seconds if success
-      if (type === 'success') {
-        setTimeout(() => {
-          statusEl.style.display = 'none';
-        }, 3000);
-      }
+      if (type === 'success') setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
     }
-    
+
     function createDownloadLink(filename, data, linkText) {
       const downloadArea = document.getElementById('download-area');
       downloadArea.style.display = 'block';
-      
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
-      
       const link = document.createElement('a');
       link.href = url;
       link.download = filename;
       link.textContent = linkText;
       link.className = 'download-link';
-      
       downloadArea.appendChild(link);
     }
-    
+
     function createGitHubLink(prUrl) {
       const downloadArea = document.getElementById('download-area');
       downloadArea.style.display = 'block';
-      
       const link = document.createElement('a');
       link.href = prUrl;
       link.target = '_blank';
-      link.textContent = '🔗 Abrir PR no GitHub';
+      link.textContent = 'Abrir PR no GitHub';
       link.className = 'download-link';
       link.style.background = '#28a745';
-      
       downloadArea.appendChild(link);
     }
 
-    function loadBrandsDropdown(brands) {
-      const dropdown = document.getElementById('base-brand-dropdown');
-      dropdown.innerHTML = '<option value="">Selecione uma brand base...</option>';
-      
-      brands.forEach(brand => {
-        const option = document.createElement('option');
-        option.value = brand.name;
-        option.textContent = `${brand.name} (${brand.variableCount} variáveis)`;
-        dropdown.appendChild(option);
-      });
-    }
-
     function loadGitHubConfigFields(config) {
-      if (config.token) {
-        document.getElementById('github-token').value = config.token;
-      }
-      if (config.owner) {
-        document.getElementById('github-owner').value = config.owner;
-      }
-      if (config.repo) {
-        document.getElementById('github-repo').value = config.repo;
-      }
+      if (config.token) document.getElementById('github-token').value = config.token;
+      if (config.owner) document.getElementById('github-owner').value = config.owner;
+      if (config.repo)  document.getElementById('github-repo').value  = config.repo;
     }
 
-    // Load collections
+    // ── Button handlers ───────────────────────────────────────────────────────
     document.getElementById('load-collections-btn').onclick = () => {
       showStatus('Carregando collections...', '');
       parent.postMessage({ pluginMessage: { type: 'load-collections' } }, '*');
     };
 
-    // Export selected collections
+    document.getElementById('select-all-btn').onclick = () =>
+      document.querySelectorAll('.collection-checkbox').forEach(cb => cb.checked = true);
+
+    document.getElementById('select-none-btn').onclick = () =>
+      document.querySelectorAll('.collection-checkbox').forEach(cb => cb.checked = false);
+
     document.getElementById('export-selected-btn').onclick = () => {
       const selectedIds = getSelectedCollections();
-      if (selectedIds.length === 0) {
-        showStatus('Selecione pelo menos uma collection!', 'error');
-        return;
-      }
-      showStatus('Exportando collections selecionadas...', '');
+      if (!selectedIds.length) { showStatus('Selecione pelo menos uma collection!', 'error'); return; }
+      showStatus('Exportando...', '');
       parent.postMessage({ pluginMessage: { type: 'export-selected-tokens', selectedCollections: selectedIds } }, '*');
     };
 
-    // Select all collections
-    document.getElementById('select-all-btn').onclick = () => {
-      const checkboxes = document.querySelectorAll('.collection-checkbox');
-      checkboxes.forEach(cb => cb.checked = true);
-    };
-
-    // Select no collections
-    document.getElementById('select-none-btn').onclick = () => {
-      const checkboxes = document.querySelectorAll('.collection-checkbox');
-      checkboxes.forEach(cb => cb.checked = false);
-    };
-
-
-    // Save GitHub configuration
     document.getElementById('save-github-config-btn').onclick = () => {
       const token = document.getElementById('github-token').value;
       const owner = document.getElementById('github-owner').value;
-      const repo = document.getElementById('github-repo').value;
-      
-      if (!token || !owner || !repo) {
-        showStatus('Preencha todos os campos da configuração GitHub!', 'error');
-        return;
-      }
-      
-      const config = { token, owner, repo };
-      parent.postMessage({ pluginMessage: { type: 'save-github-config', config } }, '*');
+      const repo  = document.getElementById('github-repo').value;
+      if (!token || !owner || !repo) { showStatus('Preencha todos os campos da configuração GitHub!', 'error'); return; }
+      parent.postMessage({ pluginMessage: { type: 'save-github-config', config: { token, owner, repo } } }, '*');
     };
 
-    // Export to GitHub
     document.getElementById('export-to-github-btn').onclick = () => {
       const selectedIds = getSelectedCollections();
-      if (selectedIds.length === 0) {
-        showStatus('Selecione pelo menos uma collection!', 'error');
-        return;
-      }
+      if (!selectedIds.length) { showStatus('Selecione pelo menos uma collection!', 'error'); return; }
       const commitDescription = document.getElementById('commit-description').value.trim();
       showStatus('Exportando para GitHub...', '');
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: 'export-to-github', 
-          selectedCollections: selectedIds,
-          commitDescription: commitDescription
-        } 
-      }, '*');
+      parent.postMessage({ pluginMessage: { type: 'export-to-github', selectedCollections: selectedIds, commitDescription } }, '*');
     };
 
-    // Create brand in Figma
-    document.getElementById('create-figma-brand-btn').onclick = () => {
-      const brandName = document.getElementById('figma-brand-name').value.trim();
-      const baseBrandName = document.getElementById('base-brand-dropdown').value;
-      
-      if (!brandName || !baseBrandName) {
-        showStatus('Preencha o nome da nova brand e selecione uma brand base!', 'error');
-        return;
-      }
-      
-      showStatus('Criando brand no Figma...', '');
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: 'create-brand-in-figma',
-          brandName: brandName,
-          baseBrandName: baseBrandName
-        } 
-      }, '*');
-    };
-
-    // Close plugin
-    document.getElementById('close-btn').onclick = () => {
+    document.getElementById('close-btn').onclick = () =>
       parent.postMessage({ pluginMessage: { type: 'close' } }, '*');
-    };
 
-    // Load brands and collections automatically on startup
-    parent.postMessage({ pluginMessage: { type: 'load-brands' } }, '*');
+    // Load collections on startup
     parent.postMessage({ pluginMessage: { type: 'load-collections' } }, '*');
     
     // Load GitHub config on startup
