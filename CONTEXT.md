@@ -1,6 +1,7 @@
 # Figma Token Exporter Plugin — Contexto Estrutural
 
 > Leia este arquivo sempre que precisar entender o projeto antes de fazer qualquer alteração.
+> Para referência técnica completa da Figma Plugin API (Variable, VariableCollection, ExtendedVariableCollection, etc.), consulte **`FIGMA_API.md`**.
 
 ---
 
